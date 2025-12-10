@@ -1,0 +1,107 @@
+{
+  "name": "Arduino Development Container",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "lts"
+    }
+  },
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": {
+      "label": "Arduino Bridge (Web IDE)",
+      "onAutoForward": "notify"
+    },
+    "3500": {
+      "label": "Arduino Bridge 2 (Connection Only)",
+      "onAutoForward": "notify"
+    }
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "bierner.markdown-mermaid",
+        "bierner.markdown-preview-github-styles",
+        "esbenp.prettier-vscode",
+        "GitHub.codespaces",
+        "mathematic.vscode-pdf",
+        "mechatroner.rainbow-csv",
+        "ms-vscode.cpptools",
+        "ms-vscode.cpptools-extension-pack",
+        "ms-vscode.cpptools-themes",
+        "oderwat.indent-rainbow",
+        "streetsidesoftware.code-spell-checker",
+        "tal7aouy.icons",
+        "xaver.clang-format",
+        "saeris.markdown-github-alerts",
+        "GitHub.copilot",
+        "usernamehw.errorlens",
+        "mccarter.start-git-bash"
+      ],
+      "settings": {
+        "files.autoSave": "onFocusChange",
+        "editor.formatOnPaste": true,
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.fontSize": 18,
+        "workbench.editorAssociations": {
+          "*.md": "vscode.markdown.preview.editor"
+        },
+        "C_Cpp.formatting": "clangFormat",
+        "workbench.colorTheme": "Default Dark+",
+        "workbench.iconTheme": "icons",
+        "C_Cpp.updateChannel": "Insiders",
+        "C_Cpp.intelliSenseEngine": "default",
+        "C_Cpp.default.intelliSenseMode": "gcc-x64",
+        "C_Cpp.default.cppStandard": "c++11",
+        "C_Cpp.default.cStandard": "c11",
+        "C_Cpp.errorSquiggles": "enabled",
+        "C_Cpp.autocompleteAddParentheses": true,
+        "github.copilot.enable": {
+          "python": false,
+          "html": false,
+          "css": false,
+          "SQL": false
+        },
+        "chat.agent.enabled": true,
+        "github.copilot.chat.participant.alwaysInclude": [
+          ".github/arduino-bridge-instructions.md"
+        ],
+        "files.associations": {
+          "*.ino": "cpp",
+          "*.pde": "cpp"
+        },
+        "[cpp]": {
+          "editor.defaultFormatter": "xaver.clang-format",
+          "editor.formatOnSave": true,
+          "editor.tabSize": 2,
+          "editor.insertSpaces": true,
+          "editor.quickSuggestions": {
+            "other": true,
+            "comments": false,
+            "strings": false
+          },
+          "editor.suggest.snippetsPreventQuickSuggestions": false,
+          "editor.wordBasedSuggestions": "matchingDocuments",
+          "editor.suggestOnTriggerCharacters": true
+        },
+        "[c]": {
+          "editor.defaultFormatter": "xaver.clang-format",
+          "editor.formatOnSave": true,
+          "editor.tabSize": 2,
+          "editor.insertSpaces": true
+        }
+      }
+    }
+  },
+
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "postStartCommand": "bash .devcontainer/start-bridge.sh",
+  "postAttachCommand": "bash .devcontainer/start-bridge.sh",
+
+  "remoteUser": "vscode"
+}
