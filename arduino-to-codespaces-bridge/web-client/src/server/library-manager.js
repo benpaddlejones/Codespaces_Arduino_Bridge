@@ -221,28 +221,107 @@ export async function upgradeLibrary(name, onProgress = null) {
 /**
  * Uninstall a library
  * @param {string} name - Library name
- * @returns {Promise<{success: boolean, log: string, duration: number, error?: string}>}
+ * @param {boolean} removeUnusedDeps - Whether to remove unused dependencies (default: true)
+ * @returns {Promise<{success: boolean, log: string, duration: number, removedDependencies: string[], error?: string}>}
  */
-export async function uninstallLibrary(name) {
+export async function uninstallLibrary(name, removeUnusedDeps = true) {
   if (!name || !isValidLibraryName(name)) {
     return {
       success: false,
       log: "",
       duration: 0,
+      removedDependencies: [],
       error: "Invalid library name",
     };
   }
 
+  // Get dependencies of the library being uninstalled
+  let depsToCheck = [];
+  if (removeUnusedDeps) {
+    try {
+      const depsResult = await executeCliCommand(["lib", "deps", name], {
+        timeout: 30000,
+      });
+      if (depsResult.success && depsResult.data?.dependencies) {
+        depsToCheck = depsResult.data.dependencies
+          .map((d) => d.name)
+          .filter((n) => n !== name); // Exclude the library itself
+      }
+    } catch {
+      // Continue with uninstall even if deps check fails
+    }
+  }
+
+  // Uninstall the main library
   const result = await executeCliCommand(["lib", "uninstall", name], {
     timeout: 30000,
     useMutex: true,
   });
 
+  if (!result.success) {
+    return {
+      success: false,
+      log: result.log || result.rawOutput || "",
+      duration: result.duration,
+      removedDependencies: [],
+      error: parseCliError(result.log),
+    };
+  }
+
+  // Check and remove unused dependencies
+  const removedDeps = [];
+  if (removeUnusedDeps && depsToCheck.length > 0) {
+    try {
+      // Get all remaining installed libraries and their dependencies
+      const remainingDeps = new Set();
+
+      const listResult = await executeCliCommand(["lib", "list"], {
+        timeout: 15000,
+      });
+
+      if (listResult.success && listResult.data?.installed_libraries) {
+        // For each installed library, get its dependencies
+        for (const item of listResult.data.installed_libraries) {
+          const libName = item.library?.name;
+          if (!libName) continue;
+
+          // Get deps of this library
+          const libDepsResult = await executeCliCommand(
+            ["lib", "deps", libName],
+            { timeout: 15000 }
+          );
+
+          if (libDepsResult.success && libDepsResult.data?.dependencies) {
+            for (const dep of libDepsResult.data.dependencies) {
+              remainingDeps.add(dep.name);
+            }
+          }
+        }
+      }
+
+      // Uninstall deps that are no longer needed
+      for (const depName of depsToCheck) {
+        if (!remainingDeps.has(depName)) {
+          logger.info(`Removing unused dependency: ${depName}`);
+          const uninstallDepResult = await executeCliCommand(
+            ["lib", "uninstall", depName],
+            { timeout: 30000, useMutex: true }
+          );
+          if (uninstallDepResult.success) {
+            removedDeps.push(depName);
+          }
+        }
+      }
+    } catch (error) {
+      logger.warn(`Error cleaning up dependencies: ${error.message}`);
+    }
+  }
+
   return {
-    success: result.success,
+    success: true,
     log: result.log || result.rawOutput || "",
     duration: result.duration,
-    error: result.success ? undefined : parseCliError(result.log),
+    removedDependencies: removedDeps,
   };
 }
 

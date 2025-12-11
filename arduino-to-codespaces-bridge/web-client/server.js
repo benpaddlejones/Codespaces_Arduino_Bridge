@@ -1674,6 +1674,128 @@ app.post("/api/restart", async (req, res) => {
   res.json({ success: true, log });
 });
 
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Bridge API server running on port ${PORT}`);
-});
+async function ensurePortAvailable(port) {
+  const conflicting = (await findProcessesUsingPort(port)).filter(
+    (pid) => pid !== process.pid && pid > 0
+  );
+
+  if (conflicting.length === 0) {
+    return;
+  }
+
+  serverLogger.warn(
+    `Port ${port} is in use by PIDs ${conflicting.join(
+      ", "
+    )}. Attempting to terminate.`
+  );
+
+  for (const pid of conflicting) {
+    await terminateProcess(pid, "SIGTERM");
+  }
+
+  await delay(500);
+
+  const stillRunning = (await findProcessesUsingPort(port)).filter(
+    (pid) => pid !== process.pid && pid > 0
+  );
+
+  if (stillRunning.length === 0) {
+    return;
+  }
+
+  serverLogger.warn(
+    `Port ${port} still occupied after SIGTERM. Forcing termination of ${stillRunning.join(
+      ", "
+    )}`
+  );
+
+  for (const pid of stillRunning) {
+    await terminateProcess(pid, "SIGKILL");
+  }
+
+  await delay(300);
+
+  const finalCheck = (await findProcessesUsingPort(port)).filter(
+    (pid) => pid !== process.pid && pid > 0
+  );
+
+  if (finalCheck.length > 0) {
+    throw new Error(
+      `Unable to free port ${port}. Still in use by ${finalCheck.join(", ")}`
+    );
+  }
+}
+
+function findProcessesUsingPort(port) {
+  return new Promise((resolve) => {
+    const command =
+      process.platform === "win32"
+        ? `netstat -ano | findstr :${port}`
+        : `lsof -ti tcp:${port}`;
+
+    exec(command, (error, stdout) => {
+      if (error || !stdout) {
+        resolve([]);
+        return;
+      }
+
+      const lines = stdout
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+      const pids = new Set();
+
+      if (process.platform === "win32") {
+        for (const line of lines) {
+          const parts = line.split(/\s+/);
+          const pid = parseInt(parts[parts.length - 1], 10);
+          if (!Number.isNaN(pid)) {
+            pids.add(pid);
+          }
+        }
+      } else {
+        for (const line of lines) {
+          const pid = parseInt(line, 10);
+          if (!Number.isNaN(pid)) {
+            pids.add(pid);
+          }
+        }
+      }
+
+      resolve(Array.from(pids));
+    });
+  });
+}
+
+async function terminateProcess(pid, signal) {
+  if (pid === process.pid) {
+    return;
+  }
+
+  try {
+    process.kill(pid, signal);
+    serverLogger.info(`Sent ${signal} to process ${pid}`);
+  } catch (error) {
+    serverLogger.warn(
+      `Failed to send ${signal} to process ${pid}: ${error?.message || error}`
+    );
+  }
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+ensurePortAvailable(PORT)
+  .then(() => {
+    server.listen(PORT, "0.0.0.0", () => {
+      console.log(`Bridge API server running on port ${PORT}`);
+    });
+  })
+  .catch((error) => {
+    serverLogger.error(
+      `Failed to free required port ${PORT}: ${error?.message || error}`
+    );
+    process.exit(1);
+  });

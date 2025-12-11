@@ -1,0 +1,83 @@
+name: Board Support Request
+description: Request support for a new Arduino board
+title: "[Board]: "
+labels: ["board-support", "enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping us expand board support! Please provide details about the board you'd like supported.
+
+  - type: input
+    id: board-name
+    attributes:
+      label: Board Name
+      description: The full name of the board
+      placeholder: "Arduino Nano ESP32"
+    validations:
+      required: true
+
+  - type: input
+    id: fqbn
+    attributes:
+      label: FQBN (Fully Qualified Board Name)
+      description: The arduino-cli identifier (e.g., arduino:avr:uno)
+      placeholder: "arduino:esp32:nano_nora"
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: Platform/Core
+      description: The platform package required for this board
+      placeholder: "arduino:esp32"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: upload-protocol
+    attributes:
+      label: Upload Protocol
+      description: How does this board typically receive firmware?
+      options:
+        - STK500 (AVR boards like Uno, Nano)
+        - BOSSA (SAM boards like Due, Zero)
+        - DFU (USB DFU mode)
+        - ESP Tool (ESP8266/ESP32)
+        - Teensy Loader
+        - RP2040 UF2
+        - Other / Unknown
+    validations:
+      required: true
+
+  - type: input
+    id: usb-vid-pid
+    attributes:
+      label: USB VID:PID
+      description: If known, the USB Vendor ID and Product ID
+      placeholder: "2341:0043"
+    validations:
+      required: false
+
+  - type: textarea
+    id: documentation
+    attributes:
+      label: Documentation Links
+      description: Links to official documentation, datasheets, or getting started guides
+      placeholder: |
+        - https://docs.arduino.cc/hardware/...
+        - https://...
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: testing
+    attributes:
+      label: Testing
+      description: Are you able to help test this board?
+      options:
+        - label: I have this board and can help test
+          required: false
+        - label: I can provide serial/USB logs during upload
+          required: false

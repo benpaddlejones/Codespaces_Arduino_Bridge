@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "platforms": [
+    {
+      "id": "arduino:avr",
+      "version": "1.8.6"
+    }
+  ],
+  "libraries": []
+}

@@ -2,29 +2,78 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Start Arduino Bridge",
+      "label": "Build Extension",
       "type": "shell",
-      "command": "cd arduino-bridge && npm start",
-      "isBackground": true,
-      "problemMatcher": {
-        "pattern": [
-          {
-            "regexp": ".",
-            "file": 1,
-            "location": 2,
-            "message": 3
-          }
-        ],
-        "background": {
-          "activeOnStart": true,
-          "beginsPattern": "Bridge server running",
-          "endsPattern": "Open the 'Ports' tab"
-        }
+      "command": "npm run build",
+      "options": {
+        "cwd": "${workspaceFolder}/arduino-to-codespaces-bridge"
       },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": ["$esbuild"]
+    },
+    {
+      "label": "Build Web Client",
+      "type": "shell",
+      "command": "npm run build:web",
+      "options": {
+        "cwd": "${workspaceFolder}/arduino-to-codespaces-bridge"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Watch Extension",
+      "type": "shell",
+      "command": "npm run watch",
+      "options": {
+        "cwd": "${workspaceFolder}/arduino-to-codespaces-bridge"
+      },
+      "isBackground": true,
+      "problemMatcher": ["$esbuild-watch"],
       "presentation": {
-        "reveal": "always",
-        "panel": "new"
+        "reveal": "silent",
+        "panel": "dedicated"
       }
+    },
+    {
+      "label": "Package VSIX",
+      "type": "shell",
+      "command": "npm run package",
+      "options": {
+        "cwd": "${workspaceFolder}/arduino-to-codespaces-bridge"
+      },
+      "problemMatcher": [],
+      "dependsOn": ["Build Web Client"]
+    },
+    {
+      "label": "Install Extension",
+      "type": "shell",
+      "command": "code --install-extension arduino-to-codespaces-bridge-1.0.0.vsix --force",
+      "options": {
+        "cwd": "${workspaceFolder}/arduino-to-codespaces-bridge"
+      },
+      "problemMatcher": [],
+      "dependsOn": ["Package VSIX"]
+    },
+    {
+      "label": "Lint",
+      "type": "shell",
+      "command": "npm run lint",
+      "options": {
+        "cwd": "${workspaceFolder}/arduino-to-codespaces-bridge"
+      },
+      "problemMatcher": ["$eslint-stylish"]
+    },
+    {
+      "label": "Compile TypeScript",
+      "type": "shell",
+      "command": "npm run compile",
+      "options": {
+        "cwd": "${workspaceFolder}/arduino-to-codespaces-bridge"
+      },
+      "problemMatcher": ["$tsc"]
     }
   ]
 }

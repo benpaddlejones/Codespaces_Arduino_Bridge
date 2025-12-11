@@ -1,0 +1,43 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/arduino-to-codespaces-bridge"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/arduino-to-codespaces-bridge/dist/**/*.js"
+      ],
+      "preLaunchTask": "Build Extension"
+    },
+    {
+      "name": "Run Extension (Watch)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/arduino-to-codespaces-bridge"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/arduino-to-codespaces-bridge/dist/**/*.js"
+      ],
+      "preLaunchTask": "Watch Extension"
+    },
+    {
+      "name": "Extension Tests",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/arduino-to-codespaces-bridge",
+        "--extensionTestsPath=${workspaceFolder}/arduino-to-codespaces-bridge/out/test/suite/index"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/arduino-to-codespaces-bridge/out/**/*.js",
+        "${workspaceFolder}/arduino-to-codespaces-bridge/dist/**/*.js"
+      ],
+      "preLaunchTask": "Compile TypeScript"
+    }
+  ]
+}

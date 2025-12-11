@@ -1,0 +1,212 @@
+{
+  "name": "arduino-to-codespaces-bridge",
+  "displayName": "Arduino to Codespaces Bridge",
+  "description": "Compile and upload Arduino sketches from GitHub Codespaces to physical boards via Web Serial",
+  "version": "1.0.0",
+  "publisher": "benpaddlejones",
+  "license": "MIT",
+  "icon": "resources/icons/arduino.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/benpaddlejones/Codespaces_Arduino_Bridge"
+  },
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "extensionDependencies": [
+    "ms-vscode.cpptools"
+  ],
+  "categories": [
+    "Programming Languages",
+    "Education",
+    "Other"
+  ],
+  "keywords": [
+    "arduino",
+    "codespaces",
+    "github",
+    "embedded",
+    "microcontroller",
+    "web serial",
+    "upload",
+    "flash"
+  ],
+  "activationEvents": [
+    "workspaceContains:**/*.ino"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "arduinoBridge.openBridge",
+        "title": "Open Arduino Bridge",
+        "category": "Arduino",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "arduinoBridge.startServer",
+        "title": "Start Bridge Server",
+        "category": "Arduino"
+      },
+      {
+        "command": "arduinoBridge.stopServer",
+        "title": "Stop Bridge Server",
+        "category": "Arduino"
+      },
+      {
+        "command": "arduinoBridge.restartServer",
+        "title": "Restart Bridge Server",
+        "category": "Arduino"
+      },
+      {
+        "command": "arduinoBridge.selectBoard",
+        "title": "Select Board",
+        "category": "Arduino"
+      },
+      {
+        "command": "arduinoBridge.compileSketch",
+        "title": "Compile Sketch",
+        "category": "Arduino"
+      },
+      {
+        "command": "arduinoBridge.refreshLibraries",
+        "title": "Refresh Libraries",
+        "category": "Arduino",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "arduinoBridge.refreshBoards",
+        "title": "Refresh Boards",
+        "category": "Arduino",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "arduinoBridge.syncEnvironmentConfig",
+        "title": "Sync Environment Config",
+        "category": "Arduino",
+        "icon": "$(sync)"
+      }
+    ],
+    "configuration": {
+      "title": "Arduino to Codespaces Bridge",
+      "properties": {
+        "arduinoBridge.serverPort": {
+          "type": "number",
+          "default": 3001,
+          "description": "Port for the Arduino Bridge server"
+        },
+        "arduinoBridge.autoStartServer": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically start the bridge server when a .ino file is detected"
+        },
+        "arduinoBridge.defaultBoard": {
+          "type": "string",
+          "default": "arduino:avr:uno",
+          "description": "Default board FQBN for compilation"
+        },
+        "arduinoBridge.sketchPaths": {
+          "type": "array",
+          "default": [],
+          "description": "Additional paths to search for sketches"
+        },
+        "arduinoBridge.showStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Arduino Bridge status in the status bar"
+        }
+      }
+    },
+    "menus": {
+      "editor/title": [
+        {
+          "when": "resourceExtname == .ino",
+          "command": "arduinoBridge.openBridge",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "when": "resourceExtname == .ino",
+          "command": "arduinoBridge.compileSketch",
+          "group": "arduino@1"
+        },
+        {
+          "when": "resourceExtname == .ino",
+          "command": "arduinoBridge.openBridge",
+          "group": "arduino@2"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "arduinoBridge.refreshBoards",
+          "when": "view == arduinoBridge.boards",
+          "group": "navigation"
+        },
+        {
+          "command": "arduinoBridge.refreshLibraries",
+          "when": "view == arduinoBridge.libraries",
+          "group": "navigation"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "arduino-bridge",
+          "title": "Arduino Bridge",
+          "icon": "resources/icons/arduino-dark.svg"
+        }
+      ]
+    },
+    "views": {
+      "arduino-bridge": [
+        {
+          "id": "arduinoBridge.status",
+          "name": "Status"
+        },
+        {
+          "id": "arduinoBridge.boards",
+          "name": "Boards"
+        },
+        {
+          "id": "arduinoBridge.libraries",
+          "name": "Libraries"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "arduinoBridge.status",
+        "contents": "[$(globe) Open Arduino Bridge](command:arduinoBridge.openBridge)"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build:web && npm run build",
+    "build": "node esbuild.js --production",
+    "build:web": "cd web-client && npm install && npm run build",
+    "watch": "node esbuild.js --watch",
+    "lint": "eslint src --ext ts",
+    "test": "vscode-test",
+    "package": "vsce package",
+    "publish": "vsce publish",
+    "compile": "tsc -p ./"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.74.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "@vscode/test-electron": "^2.3.8",
+    "@vscode/vsce": "^2.22.0",
+    "esbuild": "^0.19.8",
+    "eslint": "^8.55.0",
+    "typescript": "^5.3.2"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
