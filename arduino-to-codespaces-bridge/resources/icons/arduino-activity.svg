@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 24 24">
+  <!-- Arduino Bridge Activity Bar Icon - Arduino Uno silhouette with cloud -->
+  <defs>
+    <style>
+      .board {
+        fill: none;
+        stroke: currentColor;
+        stroke-width: .5px;
+      }
+      .board-detail {
+        fill: none;
+        stroke: currentColor;
+        stroke-width: .4px;
+        opacity: .6;
+      }
+      .pin {
+        fill: currentColor;
+      }
+      .cloud {
+        fill: none;
+        stroke: currentColor;
+        stroke-width: .5px;
+      }
+    </style>
+  </defs>
+  
+  <!-- Cloud (Codespaces) -->
+  <path class="cloud" d="M2.71,3.86c0-1.6,1.26-2.86,2.86-2.86,1.14,0,2.06.57,2.51,1.49.34-.23.8-.34,1.26-.34,1.37,0,2.51,1.14,2.51,2.51,0,.11,0,.34-.11.46.8.34,1.26,1.14,1.26,1.94,0,1.26-1.03,2.29-2.29,2.29H3.29c-1.26,0-2.29-1.03-2.29-2.29,0-.91.57-1.71,1.37-2.06-.11-.34-.23-.8-.23-1.14,0,0,.57,0,.57,0Z"/>
+  
+  <!-- Arduino Uno Board Shape -->
+  <g>
+    <!-- Main board body with USB notch -->
+    <path class="board" d="M6.5,12 L6.5,10.5 L8,10.5 L8,12 L17.5,12 L17.5,13 L19,13 L19,15 L17.5,15 L17.5,22.5 L6.5,22.5 L6.5,12 Z"/>
+    
+    <!-- USB port -->
+    <rect class="board" x="6.7" y="10.7" width="1.1" height="1.8" rx=".2" ry=".2"/>
+    
+    <!-- Barrel jack -->
+    <rect class="board" x="17.7" y="13.2" width="1.1" height="1.6" rx=".2" ry=".2"/>
+    
+    <!-- ATmega chip -->
+    <rect class="board-detail" x="10" y="15" width="4" height="5.5" rx=".3" ry=".3"/>
+    
+    <!-- Crystal -->
+    <rect class="board-detail" x="8.5" y="16" width="1" height="2.5" rx=".2" ry=".2"/>
+    
+    <!-- Reset button -->
+    <circle class="board-detail" cx="8.5" cy="20.5" r=".5"/>
+  </g>
+  
+  <!-- Digital pins (top) -->
+  <g class="pin">
+    <circle cx="9" cy="12" r=".35"/>
+    <circle cx="10.2" cy="12" r=".35"/>
+    <circle cx="11.4" cy="12" r=".35"/>
+    <circle cx="12.6" cy="12" r=".35"/>
+    <circle cx="13.8" cy="12" r=".35"/>
+    <circle cx="15" cy="12" r=".35"/>
+    <circle cx="16.2" cy="12" r=".35"/>
+  </g>
+  
+  <!-- Analog pins (bottom) -->
+  <g class="pin">
+    <circle cx="8" cy="22.5" r=".35"/>
+    <circle cx="9.2" cy="22.5" r=".35"/>
+    <circle cx="10.4" cy="22.5" r=".35"/>
+    <circle cx="11.6" cy="22.5" r=".35"/>
+    <circle cx="12.8" cy="22.5" r=".35"/>
+    <circle cx="14" cy="22.5" r=".35"/>
+  </g>
+  
+  <!-- Power pins (right side) -->
+  <g class="pin">
+    <circle cx="17.5" cy="17" r=".35"/>
+    <circle cx="17.5" cy="18.2" r=".35"/>
+    <circle cx="17.5" cy="19.4" r=".35"/>
+    <circle cx="17.5" cy="20.6" r=".35"/>
+  </g>
+  
+  <!-- Connection arrow from cloud to board -->
+  <polygon fill="currentColor" points="12.5,11 14.5,6 8,8.5 12.5,11"/>
+</svg>

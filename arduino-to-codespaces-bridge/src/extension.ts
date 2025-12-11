@@ -1,11 +1,24 @@
 /**
  * Arduino to Codespaces Bridge - VS Code Extension
  *
- * Main extension entry point that provides:
- * - Server lifecycle management
- * - Commands for opening bridge, compiling sketches
- * - Status bar integration
- * - Tree views for boards and sketches
+ * Main extension entry point that orchestrates the Arduino development workflow
+ * within GitHub Codespaces. This extension enables compiling and uploading Arduino
+ * sketches from a cloud-based development environment to physical boards connected
+ * to the user's local machine via WebSerial API.
+ *
+ * Key Features:
+ * - **Bridge Server**: Manages an Express server hosting the web client and REST API
+ * - **Status Bar Integration**: Shows server status with quick access to commands
+ * - **Tree Views**: Provides sidebar panels for Status, Boards, and Libraries
+ * - **Command Palette**: Registers commands for compile, upload, board selection
+ * - **Environment Sync**: Auto-syncs installed boards/libraries to config file
+ * - **Clang Format**: Auto-configures code formatting for Arduino style
+ *
+ * Architecture:
+ * - Server runs on localhost (default port 3001)
+ * - Browser opens with port forwarded URL for WebSerial access
+ * - VS Code provides UI, compilation, and configuration
+ * - Browser handles serial communication and firmware upload
  *
  * @module extension
  * @version 1.0.0

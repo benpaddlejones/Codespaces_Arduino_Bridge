@@ -1,9 +1,30 @@
 /**
- * Environment configuration utilities
+ * Environment Configuration Utilities
  *
- * Provides helpers for reading and writing the workspace-level
- * arduino-bridge configuration file that declares required boards
- * and libraries.
+ * Provides functions for managing the workspace-level arduino-bridge configuration
+ * file (arduino-bridge.config.json). This configuration declares required board
+ * platforms and libraries, enabling reproducible Arduino development environments.
+ *
+ * Features:
+ * - **Configuration Schema**: Version-tracked JSON format with platforms and libraries
+ * - **Auto-normalization**: Cleans and validates configuration on read
+ * - **Merge-friendly Output**: Sorted entries for clean git diffs
+ * - **Concurrency Safety**: Write lock prevents file corruption from concurrent saves
+ *
+ * Configuration File Format:
+ * ```json
+ * {
+ *   "version": 1,
+ *   "platforms": [
+ *     { "id": "arduino:avr", "version": "1.8.6" }
+ *   ],
+ *   "libraries": [
+ *     { "name": "Servo", "version": "1.2.1" }
+ *   ]
+ * }
+ * ```
+ *
+ * @module config/environmentConfig
  */
 
 import * as fs from "fs";
@@ -87,19 +108,24 @@ export function getConfigPath(workspaceRoot: string): string {
   return path.join(workspaceRoot, CONFIG_FILE_NAME);
 }
 
-function normalizeConfig(config: any, configPath: string): EnvironmentConfig {
+function normalizeConfig(config: any, _configPath: string): EnvironmentConfig {
   const version = Number.isInteger(config?.version) ? config.version : 1;
 
   const platforms = Array.isArray(config?.platforms)
     ? config.platforms
-        .map(normalizePlatform)
-        .filter((item): item is PlatformRequirement => Boolean(item))
+        .map((p: unknown) => normalizePlatform(p))
+        .filter(
+          (item: PlatformRequirement | null): item is PlatformRequirement =>
+            Boolean(item)
+        )
     : [];
 
   const libraries = Array.isArray(config?.libraries)
     ? config.libraries
-        .map(normalizeLibrary)
-        .filter((item): item is LibraryRequirement => Boolean(item))
+        .map((l: unknown) => normalizeLibrary(l))
+        .filter((item: LibraryRequirement | null): item is LibraryRequirement =>
+          Boolean(item)
+        )
     : [];
 
   const normalized: EnvironmentConfig = {

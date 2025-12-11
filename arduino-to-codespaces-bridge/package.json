@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "publisher": "benpaddlejones",
   "license": "MIT",
-  "icon": "resources/icons/arduino.png",
+  "icon": "resources/icons/icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/benpaddlejones/Codespaces_Arduino_Bridge"
@@ -155,7 +155,7 @@
         {
           "id": "arduino-bridge",
           "title": "Arduino Bridge",
-          "icon": "resources/icons/arduino-dark.svg"
+          "icon": "resources/icons/arduino-activity.svg"
         }
       ]
     },

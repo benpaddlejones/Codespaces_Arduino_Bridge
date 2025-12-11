@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 128 128">
+  <!-- Arduino to Codespaces Bridge - Main Extension Icon -->
+  <defs>
+    <style>
+      .bg { fill: #0d1117; }
+      .cloud { fill: url(#cloud-grad); opacity: .95; }
+      .cloud-text { fill: #fff; font-family: 'Courier New', monospace; font-size: 24px; font-weight: 700; }
+      .board { fill: url(#board-grad); stroke: #3fb950; stroke-width: 1.5px; }
+      .board-dark { fill: #2d333b; stroke: #444c56; }
+      .board-detail { fill: #6e7681; }
+      .board-chip { fill: #484f58; }
+      .pin { fill: #d4a72c; }
+      .led-on { fill: #3fb950; }
+      .led-off { fill: #d4a72c; }
+      .data-line { fill: none; stroke: url(#data-grad); stroke-linecap: round; stroke-width: 3px; opacity: .9; }
+      .data-dot { fill: #a371f7; }
+      .cpp-dark { fill: #00599C; }
+      .cpp-light { fill: #659AD2; }
+      .cpp-text { fill: #fff; }
+    </style>
+    <linearGradient id="cloud-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0" stop-color="#58a6ff"/>
+      <stop offset="1" stop-color="#1f6feb"/>
+    </linearGradient>
+    <linearGradient id="board-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0" stop-color="#2d8f4e"/>
+      <stop offset="1" stop-color="#1a6b35"/>
+    </linearGradient>
+    <linearGradient id="data-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0" stop-color="#58a6ff"/>
+      <stop offset=".5" stop-color="#a371f7"/>
+      <stop offset="1" stop-color="#2d8f4e"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect class="bg" width="128" height="128" rx="16" ry="16"/>
+  
+  <!-- Cloud with code symbol (Codespaces) -->
+  <g>
+    <path class="cloud" d="M71.78,26.75c0-13.89-12.15-24.31-26.04-24.31-10.42,0-19.1,5.21-22.57,13.89-12.15,0-20.83,8.68-20.83,20.83s8.68,20.83,22.57,20.83h41.67c10.42,0,19.1-8.68,19.1-19.1s-8.68-19.1-19.1-19.1c3.47,0,5.21,3.47,5.21,6.94Z"/>
+    <text class="cloud-text" x="20" y="41">&lt;/&gt;</text>
+  </g>
+  
+  <!-- Arduino Uno Board -->
+  <g>
+    <!-- Main board body with characteristic Uno shape (USB notch left, barrel jack right) -->
+    <path class="board" d="M58,118 L58,78 L60,76 L60,70 L68,70 L68,76 L70,78 L112,78 L114,80 L114,88 L120,88 L120,98 L114,98 L114,118 Z"/>
+    
+    <!-- USB Type-B port -->
+    <rect class="board-dark" x="60" y="70" width="8" height="10" rx="1" ry="1"/>
+    <rect class="board-chip" x="62" y="72" width="4" height="6" rx=".5" ry=".5"/>
+    
+    <!-- Barrel jack power connector -->
+    <rect class="board-detail" x="114" y="89" width="6" height="8" rx="1" ry="1"/>
+    <circle class="board-chip" cx="117" cy="93" r="2"/>
+    
+    <!-- ATmega328P DIP chip -->
+    <rect class="board-dark" x="80" y="88" width="18" height="24" rx="2" ry="2"/>
+    <circle class="board-chip" cx="84" cy="92" r="1.5"/>
+    <!-- Chip pins left -->
+    <g class="board-detail">
+      <rect x="78" y="91" width="2" height="1.5"/>
+      <rect x="78" y="94" width="2" height="1.5"/>
+      <rect x="78" y="97" width="2" height="1.5"/>
+      <rect x="78" y="100" width="2" height="1.5"/>
+      <rect x="78" y="103" width="2" height="1.5"/>
+      <rect x="78" y="106" width="2" height="1.5"/>
+      <rect x="78" y="109" width="2" height="1.5"/>
+    </g>
+    <!-- Chip pins right -->
+    <g class="board-detail">
+      <rect x="98" y="91" width="2" height="1.5"/>
+      <rect x="98" y="94" width="2" height="1.5"/>
+      <rect x="98" y="97" width="2" height="1.5"/>
+      <rect x="98" y="100" width="2" height="1.5"/>
+      <rect x="98" y="103" width="2" height="1.5"/>
+      <rect x="98" y="106" width="2" height="1.5"/>
+      <rect x="98" y="109" width="2" height="1.5"/>
+    </g>
+    
+    <!-- Crystal oscillator -->
+    <rect class="board-detail" x="72" y="94" width="4" height="10" rx="1" ry="1"/>
+    
+    <!-- Reset button -->
+    <circle class="board-detail" cx="71" cy="84" r="3"/>
+    <circle class="board-chip" cx="71" cy="84" r="2"/>
+    
+    <!-- LEDs (TX, RX, Power, L) -->
+    <circle class="led-on" cx="104" cy="84" r="2">
+      <animate attributeName="opacity" values="1;0.3;1" dur="2s" repeatCount="indefinite"/>
+    </circle>
+    <circle class="led-off" cx="108" cy="84" r="2"/>
+    
+    <!-- Digital pins (top header) -->
+    <g class="pin">
+      <circle cx="72" cy="78" r="1.5"/>
+      <circle cx="77" cy="78" r="1.5"/>
+      <circle cx="82" cy="78" r="1.5"/>
+      <circle cx="87" cy="78" r="1.5"/>
+      <circle cx="92" cy="78" r="1.5"/>
+      <circle cx="97" cy="78" r="1.5"/>
+      <circle cx="102" cy="78" r="1.5"/>
+      <circle cx="107" cy="78" r="1.5"/>
+    </g>
+    
+    <!-- Analog pins (bottom left) -->
+    <g class="pin">
+      <circle cx="62" cy="118" r="1.5"/>
+      <circle cx="67" cy="118" r="1.5"/>
+      <circle cx="72" cy="118" r="1.5"/>
+      <circle cx="77" cy="118" r="1.5"/>
+      <circle cx="82" cy="118" r="1.5"/>
+      <circle cx="87" cy="118" r="1.5"/>
+    </g>
+    
+    <!-- Power pins (bottom right) -->
+    <g class="pin">
+      <circle cx="100" cy="118" r="1.5"/>
+      <circle cx="105" cy="118" r="1.5"/>
+      <circle cx="110" cy="118" r="1.5"/>
+    </g>
+  </g>
+  
+  <!-- Animated data flow from cloud to board -->
+  <path class="data-line" d="M52,46 C60,56 62,62 66,70">
+    <animate attributeName="stroke-dasharray" values="0,100;50,50;100,0" dur="2s" repeatCount="indefinite"/>
+  </path>
+  
+  <!-- Animated data particles -->
+  <g>
+    <circle class="data-dot" r="3">
+      <animate attributeName="cx" values="52;66" dur="1.5s" repeatCount="indefinite"/>
+      <animate attributeName="cy" values="46;70" dur="1.5s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="1;0.3;1" dur="1.5s" repeatCount="indefinite"/>
+    </circle>
+    <circle class="data-dot" r="2.5">
+      <animate attributeName="cx" values="52;66" dur="1.5s" begin="0.3s" repeatCount="indefinite"/>
+      <animate attributeName="cy" values="46;70" dur="1.5s" begin="0.3s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.5;1;0.5" dur="1.5s" begin="0.3s" repeatCount="indefinite"/>
+    </circle>
+    <circle class="data-dot" r="2">
+      <animate attributeName="cx" values="52;66" dur="1.5s" begin="0.6s" repeatCount="indefinite"/>
+      <animate attributeName="cy" values="46;70" dur="1.5s" begin="0.6s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.3;1;0.3" dur="1.5s" begin="0.6s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+  
+  <!-- C++ Logo -->
+  <g transform="translate(6, 80)">
+    <!-- Hexagon background -->
+    <polygon class="cpp-dark" points="18,0 34,9 34,27 18,36 2,27 2,9"/>
+    <polygon class="cpp-light" points="18,4 31,12 31,24 18,32 5,24 5,12"/>
+    <!-- C letter -->
+    <path class="cpp-text" d="M20,11 C15,11 11,14 11,18 C11,22 15,25 20,25 C22.5,25 24.5,24 26,22.5 L23.5,20 C22.5,21 21.5,21.5 20,21.5 C17.5,21.5 15.5,20 15.5,18 C15.5,16 17.5,14.5 20,14.5 C21.5,14.5 22.5,15 23.5,16 L26,13.5 C24.5,12 22.5,11 20,11 Z"/>
+    <!-- First + sign -->
+    <rect class="cpp-text" x="27" y="16.5" width="5" height="1.5"/>
+    <rect class="cpp-text" x="29" y="14.5" width="1.5" height="5.5"/>
+    <!-- Second + sign -->
+    <rect class="cpp-text" x="33" y="16.5" width="5" height="1.5"/>
+    <rect class="cpp-text" x="35" y="14.5" width="1.5" height="5.5"/>
+  </g>
+</svg>

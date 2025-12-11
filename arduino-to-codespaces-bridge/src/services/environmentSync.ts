@@ -1,9 +1,25 @@
 /**
- * Environment synchronization service
+ * Environment Synchronization Service
  *
- * Applies the workspace arduino-bridge configuration by ensuring
- * required board platforms and libraries are installed via the
- * bridge server API.
+ * Automatically synchronizes the workspace Arduino environment with the
+ * arduino-bridge.config.json configuration file. This ensures that required
+ * board platforms and libraries are installed when opening a workspace.
+ *
+ * Key Responsibilities:
+ * - **Config-to-Environment Sync**: Installs missing platforms and libraries
+ *   declared in the config file when the server starts
+ * - **Environment-to-Config Sync**: Updates the config file after install/uninstall
+ *   operations to reflect the current environment state
+ * - **File Watching**: Monitors config file changes and triggers re-sync
+ * - **Progress Reporting**: Shows installation progress in VS Code notifications
+ *
+ * Sync Flow:
+ * 1. On server start, reads arduino-bridge.config.json
+ * 2. Compares declared requirements with installed items
+ * 3. Installs any missing platforms or libraries
+ * 4. After any install/uninstall, updates config to match reality
+ *
+ * @module services/environmentSync
  */
 
 import * as vscode from "vscode";

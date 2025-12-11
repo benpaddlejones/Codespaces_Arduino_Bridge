@@ -1,16 +1,34 @@
 /**
  * Arduino Bridge Server Module
  *
- * Express server that provides:
- * - REST API for Arduino CLI operations (compile, upload, board/library management)
- * - Static file serving for the web client
- * - Health monitoring
+ * Express server that provides a REST API for Arduino development operations.
+ * This module is the backbone of the VS Code extension, enabling compile and
+ * upload workflows from GitHub Codespaces to physical Arduino boards.
  *
- * This module wraps the existing arduino-bridge server logic for use within
- * the VS Code extension.
+ * Features:
+ * - **Arduino CLI Integration**: Wraps arduino-cli commands for compile, board
+ *   management, and library management operations
+ * - **Static File Serving**: Hosts the web client for browser-based serial
+ *   communication (required for WebSerial API access)
+ * - **Sketch Management**: Discovers and lists Arduino sketches in the workspace
+ * - **Board/Core Management**: Install, upgrade, and uninstall Arduino platforms
+ * - **Library Management**: Search, install, upgrade, and uninstall libraries
+ * - **Environment Sync**: Maintains arduino-bridge.config.json with installed
+ *   platforms and libraries for reproducible environments
+ *
+ * API Endpoints:
+ * - GET  /api/health - Server health check
+ * - GET  /api/version - Server version info
+ * - GET  /api/boards - List available boards
+ * - GET  /api/sketches - List sketches in workspace
+ * - POST /api/compile - Compile a sketch
+ * - GET  /api/hex/:sketchName - Download compiled firmware
+ * - GET  /api/cli/health - Check arduino-cli availability
+ * - GET  /api/cli/cores/* - Core/platform management endpoints
+ * - GET  /api/cli/libraries/* - Library management endpoints
  *
  * @module server
- * @version 1.0.0
+ * @version 1.0.15
  */
 
 import * as http from "http";
@@ -19,10 +37,7 @@ import * as fs from "fs";
 import * as vscode from "vscode";
 import express, { Application, Request, Response, NextFunction } from "express";
 import { spawn, ChildProcess, exec } from "child_process";
-import {
-  readEnvironmentConfig,
-  writeEnvironmentConfig,
-} from "../config/environmentConfig";
+import { writeEnvironmentConfig } from "../config/environmentConfig";
 
 // =============================================================================
 // Types
@@ -220,7 +235,9 @@ export class BridgeServer {
       });
 
       child.on("error", (error) => {
-        if (timeoutId) clearTimeout(timeoutId);
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
         finalize({
           success: false,
           log: error.message,
@@ -229,7 +246,9 @@ export class BridgeServer {
       });
 
       child.on("close", (code) => {
-        if (timeoutId) clearTimeout(timeoutId);
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
 
         if (timedOut) {
           finalize({
@@ -1048,8 +1067,8 @@ export class BridgeServer {
               addJson: true,
               timeoutMs: 30_000,
             });
-            if (depsResult.success && depsResult.parsed?.dependencies) {
-              depsToCheck = depsResult.parsed.dependencies
+            if (depsResult.success && depsResult.data?.dependencies) {
+              depsToCheck = depsResult.data.dependencies
                 .map((d: { name: string }) => d.name)
                 .filter((n: string) => n !== name); // Exclude the library itself
             }
@@ -1080,11 +1099,13 @@ export class BridgeServer {
               timeoutMs: 30_000,
             });
 
-            if (listResult.success && listResult.parsed?.installed_libraries) {
+            if (listResult.success && listResult.data?.installed_libraries) {
               // For each installed library, get its dependencies
-              for (const item of listResult.parsed.installed_libraries) {
+              for (const item of listResult.data.installed_libraries) {
                 const libName = item.library?.name;
-                if (!libName) continue;
+                if (!libName) {
+                  continue;
+                }
 
                 // Get deps of this library
                 const libDepsResult = await this.runCliCommand(
@@ -1092,11 +1113,8 @@ export class BridgeServer {
                   { addJson: true, timeoutMs: 15_000 }
                 );
 
-                if (
-                  libDepsResult.success &&
-                  libDepsResult.parsed?.dependencies
-                ) {
-                  for (const dep of libDepsResult.parsed.dependencies) {
+                if (libDepsResult.success && libDepsResult.data?.dependencies) {
+                  for (const dep of libDepsResult.data.dependencies) {
                     remainingDeps.add(dep.name);
                   }
                 }
@@ -1200,7 +1218,9 @@ export class BridgeServer {
             .map((line) => {
               const match = line.match(/^[-•]\s*(.+)$/);
               const pathValue = match ? match[1].trim() : line;
-              if (!pathValue) return null;
+              if (!pathValue) {
+                return null;
+              }
               return {
                 name: path.basename(pathValue),
                 path: pathValue,
@@ -1325,14 +1345,20 @@ export class BridgeServer {
     const sketches: SketchInfo[] = [];
 
     const scanDir = (dir: string, depth: number = 0): void => {
-      if (depth > MAX_SCAN_DEPTH) return;
+      if (depth > MAX_SCAN_DEPTH) {
+        return;
+      }
 
       try {
         const entries = fs.readdirSync(dir, { withFileTypes: true });
 
         for (const entry of entries) {
-          if (!entry.isDirectory()) continue;
-          if (IGNORE_DIRS.has(entry.name)) continue;
+          if (!entry.isDirectory()) {
+            continue;
+          }
+          if (IGNORE_DIRS.has(entry.name)) {
+            continue;
+          }
 
           const fullPath = path.join(dir, entry.name);
           const inoFile = path.join(fullPath, `${entry.name}.ino`);
@@ -1656,8 +1682,8 @@ export class BridgeServer {
       });
 
       const platforms: Array<{ id: string; version: string | null }> = [];
-      if (platformsResult.success && platformsResult.parsed?.platforms) {
-        for (const p of platformsResult.parsed.platforms) {
+      if (platformsResult.success && platformsResult.data?.platforms) {
+        for (const p of platformsResult.data.platforms) {
           platforms.push({
             id: p.id,
             version: p.installed_version || p.installedVersion || null,
@@ -1674,9 +1700,9 @@ export class BridgeServer {
       const libraries: Array<{ name: string; version: string | null }> = [];
       if (
         librariesResult.success &&
-        librariesResult.parsed?.installed_libraries
+        librariesResult.data?.installed_libraries
       ) {
-        for (const item of librariesResult.parsed.installed_libraries) {
+        for (const item of librariesResult.data.installed_libraries) {
           const lib = item.library || item;
           libraries.push({
             name: lib.name,

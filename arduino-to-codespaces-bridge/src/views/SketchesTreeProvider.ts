@@ -136,7 +136,7 @@ export class SketchesTreeProvider
 
     for (const sketch of allSketches) {
       const parentDir = path.dirname(sketch.sketchPath);
-      const parentName = path.basename(parentDir);
+      const _parentName = path.basename(parentDir);
 
       // Check if it's in a demo/example folder
       const relativePath = path.relative(workspaceRoot, sketch.sketchPath);
@@ -196,9 +196,15 @@ export class SketchesTreeProvider
       const entries = fs.readdirSync(dir, { withFileTypes: true });
 
       for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
-        if (IGNORE_DIRS.has(entry.name)) continue;
-        if (entry.name.startsWith(".")) continue;
+        if (!entry.isDirectory()) {
+          continue;
+        }
+        if (IGNORE_DIRS.has(entry.name)) {
+          continue;
+        }
+        if (entry.name.startsWith(".")) {
+          continue;
+        }
 
         const fullPath = path.join(dir, entry.name);
         const inoFile = path.join(fullPath, `${entry.name}.ino`);
