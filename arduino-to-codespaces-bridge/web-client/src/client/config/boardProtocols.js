@@ -13,6 +13,7 @@
 export const PROTOCOL_TYPES = {
   STK500: "STK500v1",
   BOSSA: "BOSSA",
+  DFU: "DFU",
   ESPTOOL: "ESPTool",
   RP2040: "RP2040",
   TEENSY: "Teensy",
@@ -93,8 +94,206 @@ export const BOSSA_RENESAS_CONFIG = {
   },
 
   // Bootloader PIDs (different from application PIDs)
-  bootloaderPids: [0x006d, 0x0054, 0x0057, 0x0069, 0x0369],
+  // Note: R4 Minima-family PIDs moved to the DFU configs below.
+  bootloaderPids: [0x006d, 0x0054, 0x0057],
 };
+
+/**
+ * BOSSA (SAM-BA Extended) configuration for nRF52 boards (Nano 33 BLE).
+ * Uses the flash applet buffer-write flow like the R4, but with nRF52
+ * memory layout. Manual bootloader entry (double-tap) is detected before
+ * attempting the 1200 baud touch.
+ */
+export const BOSSA_NRF52_CONFIG = {
+  protocol: PROTOCOL_TYPES.BOSSA,
+  variant: "nrf52",
+
+  serial: {
+    baudTouch: 1200,
+    baudUpload: 115200,
+    baudFallback: 921600,
+    dataBits: 8,
+    stopBits: 1,
+    parity: "none",
+  },
+
+  timing: {
+    resetDelayMs: 2500,
+    commandTimeoutMs: 1000,
+    writeTimeoutMs: 5000,
+    eraseTimeoutMs: 10000,
+    retryCount: 3,
+    retryDelayMs: 500,
+  },
+
+  memory: {
+    flashBase: 0x00000000,
+    flashSize: 0xf0000, // 960KB usable (1MB - SoftDevice/bootloader)
+    sketchOffset: 0x10000, // 64KB
+    pageSize: 4096,
+    chunkSize: 4096,
+    sramBufferOffset: 0x34,
+  },
+
+  useDirectFlashWrite: false,
+  applicationPids: [0x005a, 0x805a, 0x015a, 0x025a],
+  bootloaderPids: [],
+};
+
+/**
+ * Build a WebUSB DFU configuration (Renesas R4 family and STM32H7 mbed
+ * boards). These boards do not expose a SAM-BA serial bootloader; firmware
+ * is written over USB DFU (DFU 1.1 state machine).
+ * @param {object} options - Per-board USB/memory parameters
+ * @returns {object} DFU protocol configuration
+ */
+function makeDfuConfig({
+  variant,
+  applicationPid,
+  bootloaderPid,
+  transferSize,
+  flashBase = 0x00000000,
+  flashOffset,
+  flashSize,
+  manifestTimeoutMs = 5000,
+  use1200bpsTouch = false,
+}) {
+  return {
+    protocol: PROTOCOL_TYPES.DFU,
+    variant,
+    usb: {
+      vid: 0x2341, // Arduino
+      applicationPid,
+      bootloaderPid,
+      transferSize,
+      interfaceNumber: 0,
+      alternateSetting: 0,
+    },
+    timing: {
+      detachTimeoutMs: 1000,
+      pollIntervalMs: 100,
+      manifestTimeoutMs,
+    },
+    memory: {
+      flashBase,
+      flashOffset,
+      flashSize,
+    },
+    use1200bpsTouch,
+  };
+}
+
+/** Uno R4 Minima (and unor4minima alias) */
+export const DFU_MINIMA_CONFIG = makeDfuConfig({
+  variant: "renesas-ra4m1-dfu",
+  applicationPid: 0x0069,
+  bootloaderPid: 0x0369,
+  transferSize: 64,
+  flashOffset: 0x10000,
+  flashSize: 0x40000,
+});
+
+/** Nano R4 */
+export const DFU_NANOR4_CONFIG = makeDfuConfig({
+  variant: "renesas-ra4m1-dfu",
+  applicationPid: 0x0074,
+  bootloaderPid: 0x0374,
+  transferSize: 64,
+  flashOffset: 0x10000,
+  flashSize: 0x40000,
+});
+
+/** Portenta C33 */
+export const DFU_PORTENTA_C33_CONFIG = makeDfuConfig({
+  variant: "renesas-dfu",
+  applicationPid: 0x0068,
+  bootloaderPid: 0x0368,
+  transferSize: 64,
+  flashOffset: 0x10000,
+  flashSize: 0x200000,
+});
+
+/** Opta Digital */
+export const DFU_OPTA_DIGITAL_CONFIG = makeDfuConfig({
+  variant: "renesas-dfu",
+  applicationPid: 0x006e,
+  bootloaderPid: 0x016e,
+  transferSize: 64,
+  flashOffset: 0x10000,
+  flashSize: 0x40000,
+});
+
+/** Opta Analog */
+export const DFU_OPTA_ANALOG_CONFIG = makeDfuConfig({
+  variant: "renesas-dfu",
+  applicationPid: 0x0071,
+  bootloaderPid: 0x0171,
+  transferSize: 64,
+  flashOffset: 0x10000,
+  flashSize: 0x40000,
+});
+
+/** Science Kit / muxto */
+export const DFU_MUXTO_CONFIG = makeDfuConfig({
+  variant: "renesas-dfu",
+  applicationPid: 0x006c,
+  bootloaderPid: 0x016c,
+  transferSize: 64,
+  flashOffset: 0x10000,
+  flashSize: 0x40000,
+});
+
+/** Portenta H7 (envie_m7) */
+export const DFU_PORTENTA_H7_CONFIG = makeDfuConfig({
+  variant: "stm32h7-dfu",
+  applicationPid: 0x025b,
+  bootloaderPid: 0x035b,
+  transferSize: 2048,
+  flashBase: 0x08000000,
+  flashOffset: 0x08040000,
+  flashSize: 0x200000,
+  manifestTimeoutMs: 10000,
+  use1200bpsTouch: true,
+});
+
+/** Giga R1 */
+export const DFU_GIGA_CONFIG = makeDfuConfig({
+  variant: "stm32h7-dfu",
+  applicationPid: 0x0266,
+  bootloaderPid: 0x0366,
+  transferSize: 2048,
+  flashBase: 0x08000000,
+  flashOffset: 0x08040000,
+  flashSize: 0x200000,
+  manifestTimeoutMs: 10000,
+  use1200bpsTouch: true,
+});
+
+/** Nicla Vision */
+export const DFU_NICLA_VISION_CONFIG = makeDfuConfig({
+  variant: "stm32h7-dfu",
+  applicationPid: 0x025f,
+  bootloaderPid: 0x035f,
+  transferSize: 2048,
+  flashBase: 0x08000000,
+  flashOffset: 0x08040000,
+  flashSize: 0x200000,
+  manifestTimeoutMs: 10000,
+  use1200bpsTouch: true,
+});
+
+/** Opta (mbed) */
+export const DFU_MBED_OPTA_CONFIG = makeDfuConfig({
+  variant: "stm32h7-dfu",
+  applicationPid: 0x0064,
+  bootloaderPid: 0x0164,
+  transferSize: 2048,
+  flashBase: 0x08000000,
+  flashOffset: 0x08040000,
+  flashSize: 0x200000,
+  manifestTimeoutMs: 10000,
+  use1200bpsTouch: true,
+});
 
 /**
  * Board to Protocol mapping
@@ -110,10 +309,21 @@ export const BOARD_PROTOCOL_MAP = {
   "arduino:avr:leonardo": STK500_CONFIG,
   "arduino:avr:micro": STK500_CONFIG,
 
-  // Renesas boards - BOSSA
+  // Renesas boards
   "arduino:renesas_uno:unor4wifi": BOSSA_RENESAS_CONFIG,
-  "arduino:renesas_uno:minima": BOSSA_RENESAS_CONFIG,
-  "arduino:renesas_uno:unor4minima": BOSSA_RENESAS_CONFIG,
+  "arduino:renesas_uno:minima": DFU_MINIMA_CONFIG,
+  "arduino:renesas_uno:unor4minima": DFU_MINIMA_CONFIG,
+  "arduino:renesas_uno:nanor4": DFU_NANOR4_CONFIG,
+  "arduino:renesas_uno:portenta_c33": DFU_PORTENTA_C33_CONFIG,
+  "arduino:renesas_uno:opta_digital": DFU_OPTA_DIGITAL_CONFIG,
+  "arduino:renesas_uno:opta_analog": DFU_OPTA_ANALOG_CONFIG,
+  "arduino:renesas_uno:muxto": DFU_MUXTO_CONFIG,
+
+  // mbed STM32H7 boards - WebUSB DFU
+  "arduino:mbed_portenta:envie_m7": DFU_PORTENTA_H7_CONFIG,
+  "arduino:mbed_giga:giga": DFU_GIGA_CONFIG,
+  "arduino:mbed_nicla:nicla_vision": DFU_NICLA_VISION_CONFIG,
+  "arduino:mbed_opta:opta": DFU_MBED_OPTA_CONFIG,
 
   // SAMD boards - also BOSSA but different variant
   "arduino:samd:mkr1000": {
@@ -136,9 +346,7 @@ export const BOARD_PROTOCOL_MAP = {
   },
 
   // mbed boards - BOSSA variant
-  "arduino:mbed_nano:nano33ble": BOSSA_RENESAS_CONFIG,
-  "arduino:mbed_nano:nanorp2040connect": BOSSA_RENESAS_CONFIG,
-  "arduino:mbed_portenta:envie_m7": BOSSA_RENESAS_CONFIG,
+  "arduino:mbed_nano:nano33ble": BOSSA_NRF52_CONFIG,
 };
 
 /**

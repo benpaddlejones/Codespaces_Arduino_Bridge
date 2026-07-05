@@ -28,16 +28,18 @@
  * - GET  /api/cli/libraries/* - Library management endpoints
  *
  * @module server
- * @version 1.0.15
+ * @version 1.0.16
  */
 
 import * as http from "http";
+import * as os from "os";
 import * as path from "path";
 import * as fs from "fs";
 import * as vscode from "vscode";
+import { EventEmitter } from "events";
 import express, { Application, Request, Response, NextFunction } from "express";
 import { spawn, ChildProcess, exec } from "child_process";
-import { writeEnvironmentConfig } from "../config/environmentConfig";
+import { buildIntelliSenseConfig } from "../config/intellisenseConfig";
 
 // =============================================================================
 // Types
@@ -85,26 +87,7 @@ interface IndexStatus {
 // =============================================================================
 
 /** Server version */
-const SERVER_VERSION = "1.0.15";
-
-/** Maximum depth for sketch directory scanning */
-const MAX_SCAN_DEPTH = 3;
-
-/** Directories to ignore when scanning */
-const IGNORE_DIRS = new Set([
-  "web-client",
-  "arduino-to-codespaces-bridge",
-  "docs",
-  "scripts",
-  "build",
-  ".git",
-  ".github",
-  ".vscode",
-  ".devcontainer",
-  "node_modules",
-  "dist",
-  "out",
-]);
+const SERVER_VERSION = "1.0.17";
 
 // =============================================================================
 // BridgeServer Class
@@ -112,8 +95,12 @@ const IGNORE_DIRS = new Set([
 
 /**
  * Arduino Bridge Server for VS Code Extension
+ *
+ * Emits:
+ * - "environmentChanged" after platform/library install/uninstall operations,
+ *   so the extension can sync the requirements file.
  */
-export class BridgeServer {
+export class BridgeServer extends EventEmitter {
   private app: Application;
   private server: http.Server | undefined;
   private port: number;
@@ -122,6 +109,7 @@ export class BridgeServer {
   private outputChannel: vscode.OutputChannel;
   private workspaceRoot: string;
   private buildRoot: string;
+  private cliPath: string = "arduino-cli";
   private activeProcesses: Set<ChildProcess> = new Set();
   private lastCoreIndexUpdate?: number;
   private lastLibraryIndexUpdate?: number;
@@ -134,14 +122,24 @@ export class BridgeServer {
    */
   constructor(
     context: vscode.ExtensionContext,
-    outputChannel: vscode.OutputChannel
+    outputChannel: vscode.OutputChannel,
   ) {
+    super();
     this.context = context;
     this.outputChannel = outputChannel;
     this.app = express();
 
     const config = vscode.workspace.getConfiguration("arduinoBridge");
-    this.port = config.get("serverPort") || 3001;
+    this.port = config.get("serverPort") || 3000;
+
+    // Prefer the arduino-cli bundled with the extension; fall back to PATH
+    const localBin = path.join(context.extensionPath, "bin", "arduino-cli");
+    if (fs.existsSync(localBin)) {
+      this.cliPath = localBin;
+      this.log(`Using bundled arduino-cli: ${this.cliPath}`);
+    } else {
+      this.log("Using system arduino-cli");
+    }
 
     // Set workspace root
     const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -172,7 +170,7 @@ export class BridgeServer {
       res.header("Access-Control-Allow-Origin", "*");
       res.header(
         "Access-Control-Allow-Methods",
-        "GET, POST, PUT, DELETE, OPTIONS"
+        "GET, POST, PUT, DELETE, OPTIONS",
       );
       res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
       next();
@@ -184,14 +182,14 @@ export class BridgeServer {
    */
   private runCliCommand(
     args: string[],
-    options: { addJson?: boolean; timeoutMs?: number } = {}
+    options: { addJson?: boolean; timeoutMs?: number } = {},
   ): Promise<CliCommandResult> {
     const { addJson = true, timeoutMs = 120_000 } = options;
     const cliArgs = addJson ? [...args, "--format", "json"] : [...args];
 
     return new Promise<CliCommandResult>((resolve) => {
       const start = Date.now();
-      const child = spawn("arduino-cli", cliArgs, {
+      const child = spawn(this.cliPath, cliArgs, {
         env: process.env,
         stdio: ["ignore", "pipe", "pipe"],
       });
@@ -267,8 +265,8 @@ export class BridgeServer {
             } catch (error: any) {
               this.log(
                 `Failed to parse JSON output for command ${cliArgs.join(
-                  " "
-                )}: ${error?.message || error}`
+                  " ",
+                )}: ${error?.message || error}`,
               );
             }
           }
@@ -439,7 +437,7 @@ export class BridgeServer {
 
     if (!this.cachedBoardUrls.length) {
       this.log(
-        `Failed to load additional board URLs: ${result.error || result.log}`
+        `Failed to load additional board URLs: ${result.error || result.log}`,
       );
     }
 
@@ -450,10 +448,33 @@ export class BridgeServer {
    * Set up API routes
    */
   private setupRoutes(): void {
-    // Serve static web client files
+    // Serve static web client files.
+    // HTML must never be cached: Codespaces forwarded-URL origins cache
+    // aggressively, which previously kept serving an outdated UI after
+    // extension updates until a manual hard refresh. Hashed assets
+    // (Vite output) are immutable and safe to cache long-term.
     const webPath = path.join(this.context.extensionPath, "dist", "web");
     if (fs.existsSync(webPath)) {
-      this.app.use(express.static(webPath));
+      this.app.use(
+        express.static(webPath, {
+          etag: true,
+          setHeaders: (res, filePath) => {
+            if (filePath.endsWith(".html")) {
+              res.setHeader(
+                "Cache-Control",
+                "no-cache, no-store, must-revalidate",
+              );
+            } else if (/assets[/\\]/.test(filePath)) {
+              res.setHeader(
+                "Cache-Control",
+                "public, max-age=31536000, immutable",
+              );
+            } else {
+              res.setHeader("Cache-Control", "no-cache");
+            }
+          },
+        }),
+      );
       this.log(`Serving static files from: ${webPath}`);
     } else {
       this.log(`Warning: Web client path not found: ${webPath}`);
@@ -484,8 +505,13 @@ export class BridgeServer {
     // Board listing
     this.app.get("/api/boards", async (_req: Request, res: Response) => {
       try {
-        const boards = await this.listBoards();
-        res.json({ success: true, boards });
+        const result = await this.listBoards();
+        res.json({
+          success: true,
+          boards: result.boards,
+          noCoresInstalled: result.noCoresInstalled,
+          message: result.message,
+        });
       } catch (error: any) {
         res.status(500).json({ success: false, error: error.message });
       }
@@ -502,7 +528,7 @@ export class BridgeServer {
         } catch (error: any) {
           res.status(500).json({ success: false, error: error.message });
         }
-      }
+      },
     );
 
     // Sketch listing
@@ -518,15 +544,74 @@ export class BridgeServer {
     // Compile endpoint
     this.app.post("/api/compile", async (req: Request, res: Response) => {
       try {
-        const { sketchPath, fqbn } = req.body;
+        // The web client sends "path"; the extension command sends "sketchPath"
+        const { fqbn } = req.body;
+        let sketchPath: string | undefined =
+          req.body.sketchPath || req.body.path;
         if (!sketchPath) {
           return res
             .status(400)
             .json({ success: false, error: "sketchPath is required" });
         }
 
+        // Resolve bundled tool sketches (e.g. __TOOL__:i2c-scanner)
+        if (sketchPath.startsWith("__TOOL__:")) {
+          const toolPath = this.resolveToolSketch(
+            sketchPath.substring("__TOOL__:".length),
+          );
+          if (!toolPath) {
+            return res
+              .status(400)
+              .json({ success: false, error: "Unknown tool sketch" });
+          }
+          sketchPath = toolPath;
+        }
+
         const result = await this.compileSketch(sketchPath, fqbn);
-        res.json(result);
+
+        // Enrich the response with the fields the web client expects
+        // (log string + artifact URL) while preserving the original shape.
+        const log = (result.output || []).join("\n");
+        let artifact;
+        if (result.success && result.hexPath) {
+          const name = path.basename(result.hexPath);
+          const sketchName = path.basename(path.dirname(result.hexPath));
+          let size = 0;
+          try {
+            size = fs.statSync(result.hexPath).size;
+          } catch {
+            /* stat is best-effort */
+          }
+          artifact = { name, url: `/api/hex/${sketchName}`, size };
+        }
+
+        res.json({ ...result, log, artifact, missingIncludes: [] });
+      } catch (error: any) {
+        res.status(500).json({ success: false, error: error.message });
+      }
+    });
+
+    // IntelliSense configuration - regenerates .vscode/c_cpp_properties.json
+    // for the selected board (the web client calls this on board change)
+    this.app.post("/api/intellisense", async (req: Request, res: Response) => {
+      try {
+        const { fqbn } = req.body;
+        if (!fqbn) {
+          return res
+            .status(400)
+            .json({ success: false, error: "fqbn is required" });
+        }
+
+        const result = await this.generateIntelliSense(fqbn);
+        if (!result.success) {
+          return res.status(500).json({ success: false, error: result.error });
+        }
+
+        res.json({
+          success: true,
+          fqbn,
+          message: "IntelliSense configuration updated",
+        });
       } catch (error: any) {
         res.status(500).json({ success: false, error: error.message });
       }
@@ -538,7 +623,7 @@ export class BridgeServer {
       const hexPath = path.join(
         this.buildRoot,
         sketchName,
-        `${sketchName}.ino.hex`
+        `${sketchName}.ino.hex`,
       );
 
       if (fs.existsSync(hexPath)) {
@@ -548,7 +633,7 @@ export class BridgeServer {
         const binPath = path.join(
           this.buildRoot,
           sketchName,
-          `${sketchName}.ino.bin`
+          `${sketchName}.ino.bin`,
         );
         if (fs.existsSync(binPath)) {
           res.sendFile(binPath);
@@ -590,9 +675,10 @@ export class BridgeServer {
         this.context.extensionPath,
         "dist",
         "web",
-        "index.html"
+        "index.html",
       );
       if (fs.existsSync(indexPath)) {
+        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
         res.sendFile(indexPath);
       } else {
         res.status(404).send("Web client not found");
@@ -608,7 +694,7 @@ export class BridgeServer {
       "/api/cli/cores/index/status",
       (_req: Request, res: Response) => {
         res.json(this.buildIndexStatus(this.lastCoreIndexUpdate));
-      }
+      },
     );
 
     this.app.post(
@@ -634,7 +720,7 @@ export class BridgeServer {
             error: this.parseCliError(result.error || result.log),
           });
         }
-      }
+      },
     );
 
     this.app.get(
@@ -648,7 +734,7 @@ export class BridgeServer {
             .status(500)
             .json({ success: false, urls: [], error: error.message });
         }
-      }
+      },
     );
 
     this.app.post(
@@ -671,7 +757,7 @@ export class BridgeServer {
 
         const result = await this.runCliCommand(
           ["config", "add", "board_manager.additional_urls", url],
-          { addJson: false, timeoutMs: 10_000 }
+          { addJson: false, timeoutMs: 10_000 },
         );
 
         if (result.success) {
@@ -684,7 +770,7 @@ export class BridgeServer {
             error: this.parseCliError(result.error || result.log),
           });
         }
-      }
+      },
     );
 
     this.app.post(
@@ -699,7 +785,7 @@ export class BridgeServer {
 
         const result = await this.runCliCommand(
           ["config", "remove", "board_manager.additional_urls", url],
-          { addJson: false, timeoutMs: 10_000 }
+          { addJson: false, timeoutMs: 10_000 },
         );
 
         if (result.success) {
@@ -712,7 +798,7 @@ export class BridgeServer {
             error: this.parseCliError(result.error || result.log),
           });
         }
-      }
+      },
     );
 
     this.app.get(
@@ -733,10 +819,10 @@ export class BridgeServer {
           const rawPlatforms = Array.isArray(result.data.platforms)
             ? result.data.platforms
             : Array.isArray(result.data)
-            ? result.data
-            : [];
+              ? result.data
+              : [];
           const platforms = rawPlatforms.map((platform: any) =>
-            this.transformPlatform(platform)
+            this.transformPlatform(platform),
           );
           res.json({ success: true, platforms });
         } else {
@@ -746,7 +832,7 @@ export class BridgeServer {
             error: this.parseCliError(result.error || result.log),
           });
         }
-      }
+      },
     );
 
     this.app.get(
@@ -761,10 +847,10 @@ export class BridgeServer {
           const rawPlatforms = Array.isArray(result.data.platforms)
             ? result.data.platforms
             : Array.isArray(result.data)
-            ? result.data
-            : [];
+              ? result.data
+              : [];
           const platforms = rawPlatforms.map((platform: any) =>
-            this.transformPlatform(platform)
+            this.transformPlatform(platform),
           );
           res.json({ success: true, platforms });
         } else {
@@ -774,12 +860,12 @@ export class BridgeServer {
             error: this.parseCliError(result.error || result.log),
           });
         }
-      }
+      },
     );
 
     const respondFromCliTask = (
       res: Response,
-      result: CliCommandResult
+      result: CliCommandResult,
     ): void => {
       if (result.success) {
         res.json({
@@ -810,16 +896,16 @@ export class BridgeServer {
         const platformSpec = version ? `${platformId}@${version}` : platformId;
         const result = await this.runCliCommand(
           ["core", "install", platformSpec],
-          { addJson: false, timeoutMs: 300_000 }
+          { addJson: false, timeoutMs: 300_000 },
         );
 
-        // Sync config after successful install
+        // Notify the extension so it can sync the requirements file
         if (result.success) {
-          await this.syncInstalledToConfig();
+          this.emit("environmentChanged");
         }
 
         respondFromCliTask(res, result);
-      }
+      },
     );
 
     this.app.post(
@@ -834,10 +920,13 @@ export class BridgeServer {
 
         const result = await this.runCliCommand(
           ["core", "upgrade", platformId],
-          { addJson: false, timeoutMs: 300_000 }
+          { addJson: false, timeoutMs: 300_000 },
         );
+        if (result.success) {
+          this.emit("environmentChanged");
+        }
         respondFromCliTask(res, result);
-      }
+      },
     );
 
     this.app.post(
@@ -852,16 +941,16 @@ export class BridgeServer {
 
         const result = await this.runCliCommand(
           ["core", "uninstall", platformId],
-          { addJson: false, timeoutMs: 120_000 }
+          { addJson: false, timeoutMs: 120_000 },
         );
 
-        // Sync config after successful uninstall
+        // Notify the extension so it can sync the requirements file
         if (result.success) {
-          await this.syncInstalledToConfig();
+          this.emit("environmentChanged");
         }
 
         respondFromCliTask(res, result);
-      }
+      },
     );
   }
 
@@ -873,7 +962,7 @@ export class BridgeServer {
       "/api/cli/libraries/index/status",
       (_req: Request, res: Response) => {
         res.json(this.buildIndexStatus(this.lastLibraryIndexUpdate));
-      }
+      },
     );
 
     this.app.post(
@@ -899,7 +988,7 @@ export class BridgeServer {
             error: this.parseCliError(result.error || result.log),
           });
         }
-      }
+      },
     );
 
     this.app.get(
@@ -923,10 +1012,10 @@ export class BridgeServer {
           const rawLibraries = Array.isArray(result.data.libraries)
             ? result.data.libraries
             : Array.isArray(result.data)
-            ? result.data
-            : [];
+              ? result.data
+              : [];
           const libraries = rawLibraries.map((library: any) =>
-            this.transformLibrary(library)
+            this.transformLibrary(library),
           );
           res.json({ success: true, libraries });
         } else {
@@ -936,7 +1025,7 @@ export class BridgeServer {
             error: this.parseCliError(result.error || result.log),
           });
         }
-      }
+      },
     );
 
     this.app.get(
@@ -951,8 +1040,8 @@ export class BridgeServer {
           const installed = Array.isArray(result.data.installed_libraries)
             ? result.data.installed_libraries
             : Array.isArray(result.data)
-            ? result.data
-            : [];
+              ? result.data
+              : [];
 
           const libraries = installed.map((item: any) => {
             const lib = item.library || item;
@@ -978,12 +1067,12 @@ export class BridgeServer {
             error: this.parseCliError(result.error || result.log),
           });
         }
-      }
+      },
     );
 
     const respondFromCliTask = (
       res: Response,
-      result: CliCommandResult
+      result: CliCommandResult,
     ): void => {
       if (result.success) {
         res.json({
@@ -1022,13 +1111,13 @@ export class BridgeServer {
           timeoutMs: 240_000,
         });
 
-        // Sync config after successful install
+        // Notify the extension so it can sync the requirements file
         if (result.success) {
-          await this.syncInstalledToConfig();
+          this.emit("environmentChanged");
         }
 
         respondFromCliTask(res, result);
-      }
+      },
     );
 
     this.app.post(
@@ -1045,8 +1134,11 @@ export class BridgeServer {
           addJson: false,
           timeoutMs: 240_000,
         });
+        if (result.success) {
+          this.emit("environmentChanged");
+        }
         respondFromCliTask(res, result);
-      }
+      },
     );
 
     this.app.post(
@@ -1110,7 +1202,7 @@ export class BridgeServer {
                 // Get deps of this library
                 const libDepsResult = await this.runCliCommand(
                   ["lib", "deps", libName],
-                  { addJson: true, timeoutMs: 15_000 }
+                  { addJson: true, timeoutMs: 15_000 },
                 );
 
                 if (libDepsResult.success && libDepsResult.data?.dependencies) {
@@ -1126,7 +1218,7 @@ export class BridgeServer {
               if (!remainingDeps.has(depName)) {
                 const uninstallDepResult = await this.runCliCommand(
                   ["lib", "uninstall", depName],
-                  { addJson: false, timeoutMs: 60_000 }
+                  { addJson: false, timeoutMs: 60_000 },
                 );
                 if (uninstallDepResult.success) {
                   removedDeps.push(depName);
@@ -1139,7 +1231,7 @@ export class BridgeServer {
         }
 
         // Update the config file to reflect the uninstall
-        await this.syncInstalledToConfig();
+        this.emit("environmentChanged");
 
         res.json({
           success: true,
@@ -1147,7 +1239,7 @@ export class BridgeServer {
           log: result.log,
           removedDependencies: removedDeps,
         });
-      }
+      },
     );
 
     this.app.post(
@@ -1162,10 +1254,13 @@ export class BridgeServer {
 
         const result = await this.runCliCommand(
           ["lib", "install", "--git-url", url],
-          { addJson: false, timeoutMs: 240_000 }
+          { addJson: false, timeoutMs: 240_000 },
         );
+        if (result.success) {
+          this.emit("environmentChanged");
+        }
         respondFromCliTask(res, result);
-      }
+      },
     );
 
     this.app.post(
@@ -1180,10 +1275,13 @@ export class BridgeServer {
 
         const result = await this.runCliCommand(
           ["lib", "install", "--zip-path", zipPath],
-          { addJson: false, timeoutMs: 240_000 }
+          { addJson: false, timeoutMs: 240_000 },
         );
+        if (result.success) {
+          this.emit("environmentChanged");
+        }
         respondFromCliTask(res, result);
-      }
+      },
     );
 
     this.app.get(
@@ -1200,13 +1298,13 @@ export class BridgeServer {
 
         const result = await this.runCliCommand(
           ["lib", "examples", libraryName],
-          { addJson: false, timeoutMs: 15_000 }
+          { addJson: false, timeoutMs: 15_000 },
         );
 
         if (result.success) {
           const rawOutput = (result.rawOutput || result.log || "").replace(
             /\x1b\[[0-9;]*m/g,
-            ""
+            "",
           );
           const lines = rawOutput
             .split("\n")
@@ -1227,7 +1325,7 @@ export class BridgeServer {
               };
             })
             .filter((example): example is { name: string; path: string } =>
-              Boolean(example)
+              Boolean(example),
             );
 
           res.json({ success: true, examples });
@@ -1238,7 +1336,7 @@ export class BridgeServer {
             error: this.parseCliError(result.error || result.log),
           });
         }
-      }
+      },
     );
   }
 
@@ -1269,7 +1367,7 @@ export class BridgeServer {
         result.data?.VersionString ||
         result.data?.version ||
         (result.rawOutput || result.log || "").match(
-          /Version:\s*(\S+)/i
+          /Version:\s*(\S+)/i,
         )?.[1] ||
         "unknown";
       return { available: true, version: versionString };
@@ -1282,9 +1380,39 @@ export class BridgeServer {
   }
 
   /**
-   * List available boards
+   * List available boards. Reports when no cores are installed so the UI
+   * can guide the user to the Board Manager instead of showing an empty list.
    */
-  private async listBoards(): Promise<BoardInfo[]> {
+  private async listBoards(): Promise<{
+    boards: BoardInfo[];
+    noCoresInstalled: boolean;
+    message?: string;
+  }> {
+    // First, check if any cores are installed
+    const coresResult = await this.runCliCommand(["core", "list"], {
+      addJson: true,
+      timeoutMs: 15_000,
+    });
+
+    let installedCores: any[] = [];
+    if (coresResult.success && coresResult.data) {
+      installedCores = Array.isArray(coresResult.data.platforms)
+        ? coresResult.data.platforms
+        : Array.isArray(coresResult.data)
+          ? coresResult.data
+          : [];
+    }
+
+    if (installedCores.length === 0) {
+      this.log("No cores installed - board list will be empty");
+      return {
+        boards: [],
+        noCoresInstalled: true,
+        message:
+          "No board cores are installed. Please go to the Board Manager tab and install a core (e.g., 'Arduino AVR Boards' for Uno, Nano, Mega) to see available boards.",
+      };
+    }
+
     const result = await this.runCliCommand(["board", "listall"], {
       addJson: true,
       timeoutMs: 20_000,
@@ -1294,26 +1422,34 @@ export class BridgeServer {
       const boards = Array.isArray(result.data.boards)
         ? result.data.boards
         : Array.isArray(result.data)
-        ? result.data
-        : [];
+          ? result.data
+          : [];
 
-      return boards.map((board: any) => ({
-        fqbn: board.fqbn,
-        name: board.name,
-        platform: board.platform?.name,
-      }));
+      return {
+        boards: boards.map((board: any) => ({
+          fqbn: board.fqbn,
+          name: board.name,
+          platform: board.platform?.name,
+        })),
+        noCoresInstalled: false,
+      };
     }
 
     this.log(
-      `Error listing boards: ${this.parseCliError(result.error || result.log)}`
+      `Error listing boards: ${this.parseCliError(result.error || result.log)}`,
     );
 
-    return [
-      { fqbn: "arduino:avr:uno", name: "Arduino Uno" },
-      { fqbn: "arduino:avr:nano", name: "Arduino Nano" },
-      { fqbn: "arduino:avr:mega", name: "Arduino Mega 2560" },
-      { fqbn: "arduino:renesas_uno:unor4wifi", name: "Arduino Uno R4 WiFi" },
-    ];
+    return {
+      boards: [
+        { fqbn: "arduino:avr:uno", name: "Arduino Uno" },
+        { fqbn: "arduino:avr:nano", name: "Arduino Nano" },
+        { fqbn: "arduino:avr:mega", name: "Arduino Mega 2560" },
+        { fqbn: "arduino:renesas_uno:unor4wifi", name: "Arduino Uno R4 WiFi" },
+      ],
+      noCoresInstalled: false,
+      message:
+        "Could not retrieve board list from Arduino CLI. Showing common boards.",
+    };
   }
 
   /**
@@ -1339,46 +1475,37 @@ export class BridgeServer {
   }
 
   /**
-   * List sketches in workspace
+   * List sketches in workspace using the VS Code file search API
+   * (respects workspace scope, symlinks, and remote filesystems).
    */
   private async listSketches(): Promise<SketchInfo[]> {
     const sketches: SketchInfo[] = [];
 
-    const scanDir = (dir: string, depth: number = 0): void => {
-      if (depth > MAX_SCAN_DEPTH) {
-        return;
-      }
+    try {
+      const uris = await vscode.workspace.findFiles(
+        "**/*.ino",
+        "**/{node_modules,dist,out,build,.git,.github,.vscode,.devcontainer,web-client}/**",
+      );
 
-      try {
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const uri of uris) {
+        const inoPath = uri.fsPath;
+        const sketchDir = path.dirname(inoPath);
+        const sketchName = path.basename(sketchDir);
+        const inoFileName = path.basename(inoPath);
 
-        for (const entry of entries) {
-          if (!entry.isDirectory()) {
-            continue;
-          }
-          if (IGNORE_DIRS.has(entry.name)) {
-            continue;
-          }
-
-          const fullPath = path.join(dir, entry.name);
-          const inoFile = path.join(fullPath, `${entry.name}.ino`);
-
-          if (fs.existsSync(inoFile)) {
-            sketches.push({
-              name: entry.name,
-              path: path.relative(this.workspaceRoot, fullPath),
-              fullPath,
-            });
-          } else {
-            scanDir(fullPath, depth + 1);
-          }
+        // Arduino convention: main sketch file matches directory name
+        if (inoFileName === `${sketchName}.ino`) {
+          sketches.push({
+            name: sketchName,
+            path: path.relative(this.workspaceRoot, sketchDir),
+            fullPath: sketchDir,
+          });
         }
-      } catch (error) {
-        // Ignore permission errors
       }
-    };
+    } catch (error: any) {
+      this.log(`Error listing sketches: ${error.message}`);
+    }
 
-    scanDir(this.workspaceRoot);
     return sketches;
   }
 
@@ -1387,7 +1514,7 @@ export class BridgeServer {
    */
   private async compileSketch(
     sketchPath: string,
-    fqbn?: string
+    fqbn?: string,
   ): Promise<CompileResult> {
     const config = vscode.workspace.getConfiguration("arduinoBridge");
     const boardFqbn = fqbn || config.get("defaultBoard") || "arduino:avr:uno";
@@ -1447,8 +1574,8 @@ export class BridgeServer {
       const outputFile = fs.existsSync(hexFile)
         ? hexFile
         : fs.existsSync(binFile)
-        ? binFile
-        : null;
+          ? binFile
+          : null;
 
       return {
         success: true,
@@ -1475,7 +1602,7 @@ export class BridgeServer {
 
   private async ensurePortAvailable(port: number): Promise<void> {
     const conflicting = (await this.findProcessesUsingPort(port)).filter(
-      (pid) => pid !== process.pid && pid > 0
+      (pid) => pid !== process.pid && pid > 0,
     );
 
     if (conflicting.length === 0) {
@@ -1484,8 +1611,8 @@ export class BridgeServer {
 
     this.log(
       `Port ${port} is currently in use by PIDs ${conflicting.join(
-        ", "
-      )} - attempting to terminate`
+        ", ",
+      )} - attempting to terminate`,
     );
 
     for (const pid of conflicting) {
@@ -1495,7 +1622,7 @@ export class BridgeServer {
     await this.delay(500);
 
     const stillRunning = (await this.findProcessesUsingPort(port)).filter(
-      (pid) => pid !== process.pid && pid > 0
+      (pid) => pid !== process.pid && pid > 0,
     );
 
     if (stillRunning.length === 0) {
@@ -1504,8 +1631,8 @@ export class BridgeServer {
 
     this.log(
       `Port ${port} still occupied after SIGTERM. Forcing termination of ${stillRunning.join(
-        ", "
-      )}`
+        ", ",
+      )}`,
     );
 
     for (const pid of stillRunning) {
@@ -1515,12 +1642,12 @@ export class BridgeServer {
     await this.delay(300);
 
     const finalCheck = (await this.findProcessesUsingPort(port)).filter(
-      (pid) => pid !== process.pid && pid > 0
+      (pid) => pid !== process.pid && pid > 0,
     );
 
     if (finalCheck.length > 0) {
       throw new Error(
-        `Unable to free port ${port}. Still in use by ${finalCheck.join(", ")}`
+        `Unable to free port ${port}. Still in use by ${finalCheck.join(", ")}`,
       );
     }
   }
@@ -1569,7 +1696,7 @@ export class BridgeServer {
 
   private async terminateProcess(
     pid: number,
-    signal: NodeJS.Signals
+    signal: NodeJS.Signals,
   ): Promise<void> {
     if (pid === process.pid) {
       return;
@@ -1580,7 +1707,7 @@ export class BridgeServer {
       this.log(`Sent ${signal} to process ${pid}`);
     } catch (error: any) {
       this.log(
-        `Failed to send ${signal} to process ${pid}: ${error?.message || error}`
+        `Failed to send ${signal} to process ${pid}: ${error?.message || error}`,
       );
     }
   }
@@ -1590,34 +1717,49 @@ export class BridgeServer {
   }
 
   /**
-   * Start the server
+   * Start the server. Frees the preferred port first (graceful SIGTERM then
+   * SIGKILL); if binding still fails with EADDRINUSE, falls back to the next
+   * port so the bridge always comes up.
    */
   async start(): Promise<void> {
     if (this.running) {
       throw new Error("Server is already running");
     }
 
-    await this.ensurePortAvailable(this.port);
+    try {
+      await this.ensurePortAvailable(this.port);
+    } catch (error: any) {
+      this.log(`Could not free port ${this.port}: ${error.message}`);
+    }
 
     await new Promise<void>((resolve, reject) => {
-      const server = this.app.listen(this.port);
-      this.server = server;
+      const tryPort = (port: number, attemptsLeft: number): void => {
+        const server = this.app.listen(port);
+        this.server = server;
 
-      const handleError = (error: NodeJS.ErrnoException): void => {
-        server.off("listening", handleListening);
-        reject(error);
+        const handleError = (error: NodeJS.ErrnoException): void => {
+          server.off("listening", handleListening);
+          if (error.code === "EADDRINUSE" && attemptsLeft > 0) {
+            this.log(`Port ${port} in use, trying ${port + 1}...`);
+            tryPort(port + 1, attemptsLeft - 1);
+          } else {
+            reject(error);
+          }
+        };
+
+        const handleListening = (): void => {
+          server.off("error", handleError);
+          this.port = (server.address() as any).port;
+          this.running = true;
+          this.log(`Server started on port ${this.port}`);
+          resolve();
+        };
+
+        server.once("error", handleError);
+        server.once("listening", handleListening);
       };
 
-      const handleListening = (): void => {
-        server.off("error", handleError);
-        this.port = (server.address() as any).port;
-        this.running = true;
-        this.log(`Server started on port ${this.port}`);
-        resolve();
-      };
-
-      server.once("error", handleError);
-      server.once("listening", handleListening);
+      tryPort(this.port, 10);
     });
   }
 
@@ -1671,58 +1813,67 @@ export class BridgeServer {
   }
 
   /**
-   * Sync installed platforms and libraries to the config file
+   * Resolve a bundled tool sketch id (from a __TOOL__:<id> compile path)
+   * to its absolute directory inside the packaged extension.
+   * @param toolId - Tool identifier, e.g. "i2c-scanner"
+   * @returns Absolute path to the tool sketch folder, or null if unknown
    */
-  private async syncInstalledToConfig(): Promise<void> {
+  private resolveToolSketch(toolId: string): string | null {
+    const toolSketches: Record<string, string> = {
+      "i2c-scanner": path.join(
+        this.context.extensionPath,
+        "dist",
+        "tools",
+        "I2C_Scanner",
+      ),
+    };
+    const toolPath = toolSketches[toolId];
+    if (!toolPath || !fs.existsSync(toolPath)) {
+      return null;
+    }
+    return toolPath;
+  }
+
+  /**
+   * Generate .vscode/c_cpp_properties.json for the given board so C/C++
+   * IntelliSense resolves Arduino symbols (pinMode, Serial, etc.).
+   * Paths are resolved from `arduino-cli board details` build properties,
+   * so they are correct for any user/home directory and tool versions.
+   * @param fqbn - Fully qualified board name, e.g. "arduino:avr:uno"
+   */
+  private async generateIntelliSense(
+    fqbn: string,
+  ): Promise<{ success: boolean; error?: string; configPath?: string }> {
+    const result = await this.runCliCommand(
+      ["board", "details", "--fqbn", fqbn],
+      { addJson: true, timeoutMs: 30_000 },
+    );
+
+    if (!result.success || !result.data) {
+      return {
+        success: false,
+        error: this.parseCliError(result.error || result.log),
+      };
+    }
+
+    const { config, error } = buildIntelliSenseConfig(
+      result.data.build_properties || [],
+      { homeDir: os.homedir() },
+    );
+
+    if (!config) {
+      return { success: false, error };
+    }
+
     try {
-      // Get installed platforms
-      const platformsResult = await this.runCliCommand(["core", "list"], {
-        addJson: true,
-        timeoutMs: 30_000,
-      });
-
-      const platforms: Array<{ id: string; version: string | null }> = [];
-      if (platformsResult.success && platformsResult.data?.platforms) {
-        for (const p of platformsResult.data.platforms) {
-          platforms.push({
-            id: p.id,
-            version: p.installed_version || p.installedVersion || null,
-          });
-        }
-      }
-
-      // Get installed libraries
-      const librariesResult = await this.runCliCommand(["lib", "list"], {
-        addJson: true,
-        timeoutMs: 30_000,
-      });
-
-      const libraries: Array<{ name: string; version: string | null }> = [];
-      if (
-        librariesResult.success &&
-        librariesResult.data?.installed_libraries
-      ) {
-        for (const item of librariesResult.data.installed_libraries) {
-          const lib = item.library || item;
-          libraries.push({
-            name: lib.name,
-            version: lib.version || null,
-          });
-        }
-      }
-
-      // Write to config file
-      await writeEnvironmentConfig(this.workspaceRoot, {
-        version: 1,
-        platforms,
-        libraries,
-      });
-
-      this.log(
-        `Config synced: ${platforms.length} platforms, ${libraries.length} libraries`
-      );
-    } catch (error: any) {
-      this.log(`Failed to sync config: ${error.message}`);
+      const vscodeDir = path.join(this.workspaceRoot, ".vscode");
+      fs.mkdirSync(vscodeDir, { recursive: true });
+      const configPath = path.join(vscodeDir, "c_cpp_properties.json");
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
+      this.log(`IntelliSense configuration updated for ${fqbn}`);
+      return { success: true, configPath };
+    } catch (writeError: any) {
+      return { success: false, error: writeError.message };
     }
   }
 

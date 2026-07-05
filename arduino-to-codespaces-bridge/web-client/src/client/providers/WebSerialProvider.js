@@ -69,6 +69,9 @@ export class WebSerialProvider {
     /** @type {number} Current reconnection attempt count */
     this.reconnectAttempts = 0;
 
+    /** @type {boolean} Guard against re-entrant/duplicate teardown */
+    this.cleaningUp = false;
+
     /** @type {Object.<string, Function[]>} Event listener registry */
     this.listeners = {
       data: [],
@@ -76,6 +79,26 @@ export class WebSerialProvider {
       reconnect: [],
       reconnect_failed: [],
     };
+  }
+
+  /**
+   * Determine whether an error represents an expected loss of the serial
+   * device (unplugged, reset, or port closed) rather than a genuine fault.
+   * @param {unknown} error - Error to classify
+   * @returns {boolean} True if the error indicates the device was lost
+   */
+  isDeviceLostError(error) {
+    if (!error) return false;
+    const name = error.name || "";
+    const message = (error.message || "").toLowerCase();
+    return (
+      name === "NetworkError" ||
+      name === "BreakError" ||
+      message.includes("device has been lost") ||
+      message.includes("the device has been closed") ||
+      message.includes("disconnected") ||
+      message.includes("network error")
+    );
   }
 
   /**
@@ -90,6 +113,9 @@ export class WebSerialProvider {
       this.port = port || (await navigator.serial.requestPort());
       this.lastBaudRate = baudRate;
       this.reconnectAttempts = 0;
+      // Re-enable auto-reconnect for the new session (an earlier intentional
+      // disconnect turns it off permanently otherwise).
+      this.autoReconnect = true;
 
       // Check if port is already open, close it first
       if (this.port.readable || this.port.writable) {
@@ -123,6 +149,17 @@ export class WebSerialProvider {
       return true;
     } catch (error) {
       serialLogger.error("Error connecting to serial port", error);
+      // Leave no half-open port behind if opening/initialising failed -
+      // a lingering open port previously required a hardware reset before
+      // the next reconnect attempt could succeed.
+      if (this.port) {
+        try {
+          await this.port.close();
+        } catch (closeError) {
+          /* port was never opened or is already closed */
+        }
+        this.port = null;
+      }
       throw error;
     }
   }
@@ -133,44 +170,58 @@ export class WebSerialProvider {
    * @returns {Promise<void>}
    */
   async disconnect(intentional = true) {
-    this.keepReading = false;
+    // Idempotent: only the first caller performs the teardown. Racing
+    // cleanup (e.g. read loop error + user disconnect) previously left the
+    // port in a half-open state that broke the next reconnect.
+    if (this.cleaningUp) {
+      return;
+    }
+    this.cleaningUp = true;
 
-    // Disable auto-reconnect if intentional disconnect
-    if (intentional) {
-      this.autoReconnect = false;
-    }
+    try {
+      this.keepReading = false;
 
-    if (this.reader) {
-      try {
-        await this.reader.cancel();
-      } catch (e) {
-        serialLogger.warn("Error canceling reader", e);
+      // Disable auto-reconnect if intentional disconnect
+      if (intentional) {
+        this.autoReconnect = false;
       }
+
+      if (this.reader) {
+        try {
+          await this.reader.cancel();
+        } catch (e) {
+          serialLogger.warn("Error canceling reader", e);
+        }
+        this.reader = null;
+      }
+      if (this.writer) {
+        try {
+          await this.writer.close();
+        } catch (e) {
+          serialLogger.warn("Error closing writer", e);
+        }
+        this.writer = null;
+      }
+      if (this.port) {
+        try {
+          await this.port.setSignals({
+            dataTerminalReady: false,
+            requestToSend: false,
+          });
+        } catch (signalError) {
+          serialLogger.warn("Unable to clear control signals", signalError);
+        }
+        try {
+          await this.port.close();
+        } catch (e) {
+          serialLogger.warn("Error closing port", e);
+        }
+      }
+      this.port = null;
+      this.emit("disconnect", { unexpected: false });
+    } finally {
+      this.cleaningUp = false;
     }
-    if (this.writer) {
-      try {
-        await this.writer.close();
-      } catch (e) {
-        serialLogger.warn("Error closing writer", e);
-      }
-    }
-    if (this.port) {
-      try {
-        await this.port.setSignals({
-          dataTerminalReady: false,
-          requestToSend: false,
-        });
-      } catch (signalError) {
-        serialLogger.warn("Unable to clear control signals", signalError);
-      }
-      try {
-        await this.port.close();
-      } catch (e) {
-        serialLogger.warn("Error closing port", e);
-      }
-    }
-    this.port = null;
-    this.emit("disconnect");
   }
 
   /**
@@ -238,7 +289,7 @@ export class WebSerialProvider {
    */
   async _handleDisconnect() {
     serialLogger.warn("Port disconnected unexpectedly");
-    this.emit("disconnect");
+    this.emit("disconnect", { unexpected: true });
 
     // Only attempt auto-reconnect if enabled and we have port reference
     if (!this.autoReconnect || !this.port) {
@@ -247,17 +298,21 @@ export class WebSerialProvider {
 
     serialLogger.info(`Auto-reconnect enabled, attempting to reconnect...`);
 
+    // Capture the port reference - a failed connect() attempt clears
+    // this.port as part of its half-open cleanup.
+    const savedPort = this.port;
+
     for (let attempt = 1; attempt <= MAX_RECONNECT_ATTEMPTS; attempt++) {
       this.reconnectAttempts = attempt;
       serialLogger.info(
-        `Reconnect attempt ${attempt}/${MAX_RECONNECT_ATTEMPTS}`
+        `Reconnect attempt ${attempt}/${MAX_RECONNECT_ATTEMPTS}`,
       );
 
       await new Promise((r) => setTimeout(r, RECONNECT_DELAY_MS));
 
       try {
         // Try to reopen the port at the last baud rate
-        await this.connect(this.lastBaudRate, this.port);
+        await this.connect(this.lastBaudRate, savedPort);
         serialLogger.success("Reconnected successfully");
         this.reconnectAttempts = 0;
         this.emit("reconnect");
@@ -315,7 +370,7 @@ export class WebSerialProvider {
       } catch (signalError) {
         serialLogger.warn(
           "Unable to assert control signals after reopen",
-          signalError
+          signalError,
         );
       }
 
@@ -362,13 +417,7 @@ export class WebSerialProvider {
         }
       } catch (error) {
         // Check if this is a disconnect error
-        const errorMsg = error.message?.toLowerCase() || "";
-        if (
-          errorMsg.includes("device has been lost") ||
-          errorMsg.includes("disconnected") ||
-          errorMsg.includes("network error") ||
-          error.name === "NetworkError"
-        ) {
+        if (this.isDeviceLostError(error)) {
           serialLogger.warn("Port disconnected during read");
           unexpectedDisconnect = true;
           break;
@@ -417,7 +466,7 @@ export class WebSerialProvider {
   off(event, callback) {
     if (this.listeners[event]) {
       this.listeners[event] = this.listeners[event].filter(
-        (cb) => cb !== callback
+        (cb) => cb !== callback,
       );
     }
   }

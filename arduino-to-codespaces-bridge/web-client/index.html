@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -110,6 +110,13 @@
           </label>
           <button id="clearBtn">Clear Output</button>
           <button id="downloadBtn">Download Output</button>
+          <div class="separator"></div>
+          <button
+            id="i2cScanBtn"
+            title="Upload a diagnostic sketch that scans the I2C bus and identifies connected devices (replaces the sketch on the board)"
+          >
+            🔍 I2C Scan
+          </button>
         </div>
       </div>
     </div>
@@ -419,7 +426,7 @@
           max-width: 400px;
           text-align: center;
           color: #cccccc;
-          font-family: 'Segoe UI', sans-serif;
+          font-family: &quot;Segoe UI&quot;, sans-serif;
         "
       >
         <h3 style="margin-top: 0; color: #ffffff">⚠️ Device Reset Required</h3>
@@ -485,7 +492,7 @@
           max-width: 450px;
           text-align: center;
           color: #cccccc;
-          font-family: 'Segoe UI', sans-serif;
+          font-family: &quot;Segoe UI&quot;, sans-serif;
         "
       >
         <h3 style="margin-top: 0; color: #f59e0b">⚠️ Board Mismatch Warning</h3>
@@ -516,6 +523,71 @@
           </button>
           <button
             id="mismatchCancelBtn"
+            style="
+              background: #3c3c3c;
+              color: white;
+              border: none;
+              padding: 8px 16px;
+              cursor: pointer;
+              margin-left: 10px;
+              border-radius: 2px;
+            "
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- DFU Device Selection Modal (WebUSB requires a user gesture) -->
+    <div
+      id="dfuModal"
+      style="
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.7);
+        z-index: 1000;
+        justify-content: center;
+        align-items: center;
+      "
+    >
+      <div
+        style="
+          background: #252526;
+          padding: 20px;
+          border-radius: 5px;
+          border: 1px solid #007acc;
+          max-width: 420px;
+          text-align: center;
+          color: #cccccc;
+          font-family: &quot;Segoe UI&quot;, sans-serif;
+        "
+      >
+        <h3 style="margin-top: 0; color: #ffffff">🔌 Select DFU Device</h3>
+        <p id="dfuModalMessage">
+          Click the button below, then choose the Arduino DFU device in the USB
+          chooser.
+        </p>
+        <div style="margin-top: 20px">
+          <button
+            id="dfuSelectBtn"
+            style="
+              background: #007acc;
+              color: white;
+              border: none;
+              padding: 8px 16px;
+              cursor: pointer;
+              border-radius: 2px;
+            "
+          >
+            Select DFU Device
+          </button>
+          <button
+            id="dfuCancelBtn"
             style="
               background: #3c3c3c;
               color: white;

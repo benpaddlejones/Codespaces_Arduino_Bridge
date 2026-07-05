@@ -2,19 +2,20 @@
   "name": "arduino-to-codespaces-bridge",
   "displayName": "Arduino to Codespaces Bridge",
   "description": "Compile and upload Arduino sketches from GitHub Codespaces to physical boards via Web Serial",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "publisher": "benpaddlejones",
-  "license": "MIT",
+  "license": "GPL-3.0",
   "icon": "resources/icons/icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/benpaddlejones/Codespaces_Arduino_Bridge"
   },
   "engines": {
-    "vscode": "^1.74.0"
+    "vscode": "^1.82.0"
   },
   "extensionDependencies": [
-    "ms-vscode.cpptools"
+    "ms-vscode.cpptools",
+    "xaver.clang-format"
   ],
   "categories": [
     "Programming Languages",
@@ -39,7 +40,7 @@
     "commands": [
       {
         "command": "arduinoBridge.openBridge",
-        "title": "Open Arduino Bridge",
+        "title": "Open Arduino to Codespaces Bridge",
         "category": "Arduino",
         "icon": "$(plug)"
       },
@@ -92,7 +93,7 @@
       "properties": {
         "arduinoBridge.serverPort": {
           "type": "number",
-          "default": 3001,
+          "default": 3000,
           "description": "Port for the Arduino Bridge server"
         },
         "arduinoBridge.autoStartServer": {
@@ -154,7 +155,7 @@
       "activitybar": [
         {
           "id": "arduino-bridge",
-          "title": "Arduino Bridge",
+          "title": "Arduino to Codespaces Bridge",
           "icon": "resources/icons/arduino-activity.svg"
         }
       ]
@@ -180,15 +181,148 @@
         "view": "arduinoBridge.status",
         "contents": "[$(globe) Open Arduino Bridge](command:arduinoBridge.openBridge)"
       }
-    ]
+    ],
+    "portsAttributes": {
+      "3000": {
+        "label": "Arduino Bridge Server",
+        "onAutoForward": "openBrowserOnce",
+        "elevateIfNeeded": false,
+        "requireLocalPort": true
+      }
+    },
+    "configurationDefaults": {
+      "files.associations": {
+        "*.ino": "cpp",
+        "*.pde": "cpp"
+      },
+      "C_Cpp.formatting": "clangFormat",
+      "C_Cpp.intelliSenseEngine": "default",
+      "C_Cpp.default.intelliSenseMode": "gcc-x64",
+      "C_Cpp.default.cppStandard": "c++11",
+      "C_Cpp.default.cStandard": "c11",
+      "C_Cpp.errorSquiggles": "enabled",
+      "C_Cpp.autocompleteAddParentheses": true,
+      "[cpp]": {
+        "editor.defaultFormatter": "xaver.clang-format",
+        "editor.formatOnSave": true,
+        "editor.tabSize": 2,
+        "editor.insertSpaces": true,
+        "editor.quickSuggestions": {
+          "other": true,
+          "comments": false,
+          "strings": false
+        },
+        "editor.suggest.snippetsPreventQuickSuggestions": false,
+        "editor.wordBasedSuggestions": "matchingDocuments",
+        "editor.suggestOnTriggerCharacters": true
+      },
+      "[c]": {
+        "editor.defaultFormatter": "xaver.clang-format",
+        "editor.formatOnSave": true,
+        "editor.tabSize": 2,
+        "editor.insertSpaces": true
+      },
+      "cSpell.words": [
+        "Arduino",
+        "FQBN",
+        "GPIO",
+        "PWM",
+        "EEPROM",
+        "WiFi",
+        "Uno",
+        "Nano",
+        "Mega",
+        "Renesas",
+        "digitalWrite",
+        "digitalRead",
+        "analogWrite",
+        "analogRead",
+        "pinMode",
+        "millis",
+        "micros",
+        "Serial",
+        "PROGMEM",
+        "ATmega",
+        "AVR",
+        "ESP",
+        "ESP32",
+        "ESP8266",
+        "STM32",
+        "SAMD",
+        "Teensy",
+        "Portenta",
+        "Opta",
+        "Giga",
+        "MKR",
+        "SPI",
+        "I2C",
+        "TWI",
+        "UART",
+        "USART",
+        "ISR",
+        "IRQ",
+        "ADC",
+        "DAC",
+        "LED",
+        "RGB",
+        "servo",
+        "stepper",
+        "baud",
+        "baudrate",
+        "bitRead",
+        "bitWrite",
+        "bitSet",
+        "bitClear",
+        "highByte",
+        "lowByte",
+        "attachInterrupt",
+        "detachInterrupt",
+        "noInterrupts",
+        "interrupts",
+        "delayMicroseconds",
+        "pulseIn",
+        "pulseInLong",
+        "shiftIn",
+        "shiftOut",
+        "tone",
+        "noTone",
+        "constrain",
+        "remap",
+        "sizeof",
+        "bootloader",
+        "firmware",
+        "hexfile",
+        "ihex",
+        "avrdude",
+        "bossac",
+        "esptool",
+        "platformio",
+        "INO",
+        "ino",
+        "pde",
+        "nRF",
+        "Seeed",
+        "Adafruit",
+        "SparkFun",
+        "DFRobot",
+        "Elegoo",
+        "Wemos",
+        "NodeMCU",
+        "FTDI",
+        "CH340",
+        "CP210x"
+      ]
+    }
   },
   "scripts": {
-    "vscode:prepublish": "npm run build:web && npm run build",
+    "vscode:prepublish": "npm run fetch:cli && npm run build:web && npm run build",
+    "fetch:cli": "bash scripts/fetch-arduino-cli.sh",
     "build": "node esbuild.js --production",
     "build:web": "cd web-client && npm install && npm run build",
     "watch": "node esbuild.js --watch",
     "lint": "eslint src --ext ts",
     "test": "vscode-test",
+    "test:intellisense": "node test/intellisense.test.mjs",
     "package": "vsce package",
     "publish": "vsce publish",
     "compile": "tsc -p ./"

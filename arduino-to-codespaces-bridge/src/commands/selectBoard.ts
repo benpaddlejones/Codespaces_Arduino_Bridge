@@ -63,8 +63,12 @@ const DEFAULT_BOARDS: BoardQuickPickItem[] = [
 /**
  * Show board selection quick pick
  * @param server - Bridge server instance
+ * @param outputChannel - Output channel for logging
  */
-export async function selectBoard(server: BridgeServer): Promise<void> {
+export async function selectBoard(
+  server: BridgeServer,
+  outputChannel: vscode.OutputChannel,
+): Promise<void> {
   // Show loading indicator
   const boards = await vscode.window.withProgress(
     {
@@ -73,13 +77,13 @@ export async function selectBoard(server: BridgeServer): Promise<void> {
       cancellable: false,
     },
     async () => {
-      return await fetchBoards(server);
-    }
+      return await fetchBoards(server, outputChannel);
+    },
   );
 
   if (boards.length === 0) {
     vscode.window.showWarningMessage(
-      "No boards found. Make sure arduino-cli is installed and board cores are installed."
+      "No boards found. Make sure arduino-cli is installed and board cores are installed.",
     );
     return;
   }
@@ -105,7 +109,7 @@ export async function selectBoard(server: BridgeServer): Promise<void> {
     await config.update(
       "defaultBoard",
       selected.fqbn,
-      vscode.ConfigurationTarget.Workspace
+      vscode.ConfigurationTarget.Workspace,
     );
     vscode.window.showInformationMessage(`Board set to: ${selected.label}`);
   }
@@ -114,9 +118,11 @@ export async function selectBoard(server: BridgeServer): Promise<void> {
 /**
  * Fetch boards from server or use defaults
  * @param server - Bridge server instance
+ * @param outputChannel - Output channel for logging
  */
 async function fetchBoards(
-  server: BridgeServer
+  server: BridgeServer,
+  outputChannel: vscode.OutputChannel,
 ): Promise<BoardQuickPickItem[]> {
   if (!server.isRunning()) {
     return DEFAULT_BOARDS;
@@ -143,8 +149,10 @@ async function fetchBoards(
         fqbn: board.fqbn,
       }));
     }
-  } catch (error) {
-    console.warn("Failed to fetch boards from server:", error);
+  } catch (error: any) {
+    outputChannel.appendLine(
+      `[SelectBoard] Failed to fetch boards: ${error.message || error}`,
+    );
   }
 
   // Return defaults if fetch failed

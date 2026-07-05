@@ -9,7 +9,7 @@
  * - Health monitoring and auto-recovery
  *
  * @module server
- * @version 1.0.15
+ * @version 1.0.16
  */
 
 import express from "express";
@@ -25,13 +25,18 @@ import { success, failure, ErrorCodes } from "./src/shared/Result.js";
 import { checkCliAvailable } from "./src/server/cli-executor.js";
 import * as coreManager from "./src/server/core-manager.js";
 import * as libraryManager from "./src/server/library-manager.js";
+import {
+  startHealthMonitor,
+  getLastHealthCheck,
+  getHealthHistory,
+} from "./src/server/health-monitor.js";
 
 // =============================================================================
 // Constants
 // =============================================================================
 
 /** Server version for cache debugging - update when making changes */
-const SERVER_VERSION = "1.0.15";
+const SERVER_VERSION = "1.0.17";
 
 /** Server start time for uptime calculation */
 const SERVER_START_TIME = Date.now();
@@ -147,7 +152,7 @@ const BUILD_ROOT = path.join(WORKSPACE_ROOT, "build", "sketches");
 const START_SCRIPT = path.join(
   WORKSPACE_ROOT,
   ".devcontainer",
-  "start-bridge.sh"
+  "start-bridge.sh",
 );
 
 /** Path to upload strategies directory */
@@ -155,8 +160,13 @@ const STRATEGIES_ROOT = path.join(
   WORKSPACE_ROOT,
   "Arduino_Upload_to_WebSerialAPI_Tool",
   "src",
-  "strategies"
+  "strategies",
 );
+
+/** Bundled diagnostic tool sketches, referenced via __TOOL__:<id> compile paths */
+const TOOL_SKETCHES = {
+  "i2c-scanner": path.join(__dirname, "tools", "I2C_Scanner"),
+};
 
 /** Maximum depth for sketch directory scanning */
 const MAX_SCAN_DEPTH = 3;
@@ -200,13 +210,13 @@ async function regenerateIntelliSense(reason = "unknown") {
   }
 
   console.log(
-    `[IntelliSense] Regenerating for ${currentFqbn} (reason: ${reason})`
+    `[IntelliSense] Regenerating for ${currentFqbn} (reason: ${reason})`,
   );
 
   const scriptPath = path.join(
     __dirname,
     "scripts",
-    "generate-intellisense.sh"
+    "generate-intellisense.sh",
   );
 
   if (!fs.existsSync(scriptPath)) {
@@ -219,7 +229,7 @@ async function regenerateIntelliSense(reason = "unknown") {
     const execPromise = promisify(exec);
 
     const { stdout, stderr } = await execPromise(
-      `bash "${scriptPath}" "${currentFqbn}"`
+      `bash "${scriptPath}" "${currentFqbn}"`,
     );
     console.log(`[IntelliSense] Updated: ${stdout.trim()}`);
     if (stderr) console.warn(`[IntelliSense] stderr: ${stderr}`);
@@ -265,7 +275,7 @@ const STANDARD_LIBRARY_HEADERS = new Set(
     "stdlib",
     "string",
     "time",
-  ].map((name) => name.toLowerCase())
+  ].map((name) => name.toLowerCase()),
 );
 
 /**
@@ -333,21 +343,21 @@ async function detectMissingIncludes(compileLog) {
           console.log(
             `[MissingLib] Checking line ${j}: "${nearbyLine.substring(
               0,
-              50
+              50,
             )}" includeMatch:`,
-            includeMatch ? includeMatch[1] : null
+            includeMatch ? includeMatch[1] : null,
           );
           if (includeMatch && nearbyLine.includes(rawHeader)) {
             isAngleBracket = includeMatch[1] === "<";
             console.log(
-              `[MissingLib] Found include style: ${includeMatch[1]} -> isAngleBracket: ${isAngleBracket}`
+              `[MissingLib] Found include style: ${includeMatch[1]} -> isAngleBracket: ${isAngleBracket}`,
             );
             break;
           }
         }
 
         console.log(
-          `[MissingLib] Found: "${rawHeader}" -> base: "${baseName}", angleBracket: ${isAngleBracket}`
+          `[MissingLib] Found: "${rawHeader}" -> base: "${baseName}", angleBracket: ${isAngleBracket}`,
         );
 
         if (!baseName || normalizedBase.length < 2) continue;
@@ -374,7 +384,7 @@ async function detectMissingIncludes(compileLog) {
       installedLibrariesNormalized = new Set(
         installed.libraries
           .map((lib) => normalizeLibraryName(lib.name))
-          .filter(Boolean)
+          .filter(Boolean),
       );
     }
   } catch (error) {
@@ -393,7 +403,7 @@ async function detectMissingIncludes(compileLog) {
     if (info.isLibraryInclude !== false) {
       try {
         const searchResult = await libraryManager.searchLibraries(
-          info.baseName
+          info.baseName,
         );
         if (searchResult.success && Array.isArray(searchResult.libraries)) {
           librarySuggestions = searchResult.libraries
@@ -423,12 +433,56 @@ async function detectMissingIncludes(compileLog) {
 
 fs.mkdirSync(BUILD_ROOT, { recursive: true });
 
+// =============================================================================
+// Route Error Protection (safeRoute)
+// =============================================================================
+
+/**
+ * Wrap a route handler so that any sync throw or async rejection is caught
+ * and the request always receives a response instead of hanging.
+ * (Express 4 does not forward async rejections to error middleware.)
+ * @param {Function} handler - Express route handler
+ * @returns {Function} Protected handler
+ */
+function safeRoute(handler) {
+  return async (req, res, next) => {
+    try {
+      await handler(req, res, next);
+    } catch (error) {
+      serverLogger.error(`Route error ${req.method} ${req.url}:`, error);
+      logCrash("Route Error", error);
+      if (!res.headersSent) {
+        res.status(500).json({
+          error: "Internal server error",
+          message: "The server encountered an error but is still running.",
+          recovered: true,
+        });
+      }
+    }
+  };
+}
+
+// Shim route registration so every handler is automatically protected.
+for (const method of ["get", "post", "put", "delete", "patch"]) {
+  const original = app[method].bind(app);
+  app[method] = (routePath, ...handlers) => {
+    // app.get("setting") with no handlers is Express's settings getter
+    if (handlers.length === 0) {
+      return original(routePath);
+    }
+    return original(
+      routePath,
+      ...handlers.map((h) => (typeof h === "function" ? safeRoute(h) : h)),
+    );
+  };
+}
+
 app.use(express.json());
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header(
     "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept"
+    "Origin, X-Requested-With, Content-Type, Accept",
   );
   next();
 });
@@ -474,11 +528,12 @@ function formatUptime(seconds) {
 app.get("/api/health", (req, res) => {
   const uptimeSeconds = Math.floor((Date.now() - SERVER_START_TIME) / 1000);
   const memUsage = process.memoryUsage();
+  const lastCheck = getLastHealthCheck();
 
   res.json({
     success: true,
     data: {
-      status: "healthy",
+      status: lastCheck && !lastCheck.healthy ? "degraded" : "healthy",
       version: SERVER_VERSION,
       uptime: uptimeSeconds,
       uptimeFormatted: formatUptime(uptimeSeconds),
@@ -488,7 +543,18 @@ app.get("/api/health", (req, res) => {
         heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024),
         rss: Math.round(memUsage.rss / 1024 / 1024),
       },
+      issues: lastCheck ? lastCheck.issues : [],
     },
+  });
+});
+
+/**
+ * Health history endpoint for diagnostics
+ */
+app.get("/api/health/history", (req, res) => {
+  res.json({
+    success: true,
+    history: getHealthHistory(20),
   });
 });
 
@@ -650,7 +716,7 @@ app.post("/api/cli/cores/install", async (req, res) => {
     }
 
     console.log(
-      `[CLI] Installing core: ${platformId}${version ? "@" + version : ""}`
+      `[CLI] Installing core: ${platformId}${version ? "@" + version : ""}`,
     );
     const result = await coreManager.installCore(platformId, version);
 
@@ -784,12 +850,12 @@ app.post("/api/cli/libraries/install", async (req, res) => {
     console.log(
       `[CLI] Installing library: ${name}${version ? "@" + version : ""}${
         installDeps ? " (with deps)" : ""
-      }`
+      }`,
     );
     const result = await libraryManager.installLibrary(
       name,
       version,
-      installDeps
+      installDeps,
     );
 
     if (result.success) {
@@ -925,7 +991,7 @@ app.post("/api/cli/libraries/examples/sync", async (req, res) => {
 
     if (result.success) {
       console.log(
-        `[CLI] Synced ${result.synced} library examples, removed ${result.removed} stale links`
+        `[CLI] Synced ${result.synced} library examples, removed ${result.removed} stale links`,
       );
     } else {
       console.warn("[CLI] Examples sync completed with errors:", result.errors);
@@ -965,11 +1031,11 @@ app.post("/api/cli/libraries/examples/copy", async (req, res) => {
     }
 
     console.log(
-      `[CLI] Copying example: ${examplePath} -> ${targetName || "(auto)"}`
+      `[CLI] Copying example: ${examplePath} -> ${targetName || "(auto)"}`,
     );
     const result = await libraryManager.copyExampleToWorkspace(
       examplePath,
-      targetName
+      targetName,
     );
 
     if (result.success) {
@@ -1097,6 +1163,14 @@ function runRestartSequence() {
 function validateSketchPath(relativePath) {
   if (!relativePath || typeof relativePath !== "string") return null;
 
+  // Handle bundled tool sketches (prefixed with __TOOL__:)
+  if (relativePath.startsWith("__TOOL__:")) {
+    const toolId = relativePath.substring("__TOOL__:".length);
+    const toolPath = TOOL_SKETCHES[toolId];
+    if (!toolPath || !fs.existsSync(toolPath)) return null;
+    return { absolutePath: toolPath, normalized: `tools/${toolId}` };
+  }
+
   // Handle library example paths (prefixed with __EXAMPLE__:)
   if (relativePath.startsWith("__EXAMPLE__:")) {
     const examplePath = relativePath.substring("__EXAMPLE__:".length);
@@ -1184,7 +1258,7 @@ function runArduinoCompile({ sketchPath, fqbn, outputDir }) {
       if (!resolved) {
         resolved = true;
         serverLogger.warn(
-          `Compile timed out after ${CLI_TIMEOUT_MS}ms, killing process`
+          `Compile timed out after ${CLI_TIMEOUT_MS}ms, killing process`,
         );
         child.kill("SIGTERM");
         setTimeout(() => {
@@ -1457,7 +1531,7 @@ app.get("/api/board-details/:fqbn(*)", (req, res) => {
         console.error(`[Board Details] Parse error for ${fqbn}:`, e.message);
         res.status(500).json({ error: "Failed to parse board details" });
       }
-    }
+    },
   );
 });
 
@@ -1513,11 +1587,11 @@ app.post("/api/upload", async (req, res) => {
   // Then upload using arduino-cli
   const artifactPath = path.join(
     compileResult.outputDir,
-    compileResult.artifact.name
+    compileResult.artifact.name,
   );
 
   console.log(
-    `[Upload] Uploading ${artifactPath} to ${port} for board ${fqbn}`
+    `[Upload] Uploading ${artifactPath} to ${port} for board ${fqbn}`,
   );
 
   const uploadResult = await new Promise((resolve) => {
@@ -1613,7 +1687,7 @@ app.post("/api/intellisense", async (req, res) => {
   const scriptPath = path.join(
     __dirname,
     "scripts",
-    "generate-intellisense.sh"
+    "generate-intellisense.sh",
   );
 
   if (!fs.existsSync(scriptPath)) {
@@ -1625,7 +1699,7 @@ app.post("/api/intellisense", async (req, res) => {
     const execPromise = promisify(exec);
 
     const { stdout, stderr } = await execPromise(
-      `bash "${scriptPath}" "${fqbn}"`
+      `bash "${scriptPath}" "${fqbn}"`,
     );
 
     console.log(`[IntelliSense] ${stdout}`);
@@ -1676,7 +1750,7 @@ app.post("/api/restart", async (req, res) => {
 
 async function ensurePortAvailable(port) {
   const conflicting = (await findProcessesUsingPort(port)).filter(
-    (pid) => pid !== process.pid && pid > 0
+    (pid) => pid !== process.pid && pid > 0,
   );
 
   if (conflicting.length === 0) {
@@ -1685,8 +1759,8 @@ async function ensurePortAvailable(port) {
 
   serverLogger.warn(
     `Port ${port} is in use by PIDs ${conflicting.join(
-      ", "
-    )}. Attempting to terminate.`
+      ", ",
+    )}. Attempting to terminate.`,
   );
 
   for (const pid of conflicting) {
@@ -1696,7 +1770,7 @@ async function ensurePortAvailable(port) {
   await delay(500);
 
   const stillRunning = (await findProcessesUsingPort(port)).filter(
-    (pid) => pid !== process.pid && pid > 0
+    (pid) => pid !== process.pid && pid > 0,
   );
 
   if (stillRunning.length === 0) {
@@ -1705,8 +1779,8 @@ async function ensurePortAvailable(port) {
 
   serverLogger.warn(
     `Port ${port} still occupied after SIGTERM. Forcing termination of ${stillRunning.join(
-      ", "
-    )}`
+      ", ",
+    )}`,
   );
 
   for (const pid of stillRunning) {
@@ -1716,12 +1790,12 @@ async function ensurePortAvailable(port) {
   await delay(300);
 
   const finalCheck = (await findProcessesUsingPort(port)).filter(
-    (pid) => pid !== process.pid && pid > 0
+    (pid) => pid !== process.pid && pid > 0,
   );
 
   if (finalCheck.length > 0) {
     throw new Error(
-      `Unable to free port ${port}. Still in use by ${finalCheck.join(", ")}`
+      `Unable to free port ${port}. Still in use by ${finalCheck.join(", ")}`,
     );
   }
 }
@@ -1778,7 +1852,7 @@ async function terminateProcess(pid, signal) {
     serverLogger.info(`Sent ${signal} to process ${pid}`);
   } catch (error) {
     serverLogger.warn(
-      `Failed to send ${signal} to process ${pid}: ${error?.message || error}`
+      `Failed to send ${signal} to process ${pid}: ${error?.message || error}`,
     );
   }
 }
@@ -1787,15 +1861,29 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Final Express error middleware - catches sync errors forwarded by Express
+app.use((err, req, res, next) => {
+  serverLogger.error(`Express error ${req.method} ${req.url}:`, err);
+  logCrash("Express Error", err);
+  if (res.headersSent) {
+    return next(err);
+  }
+  res.status(err.status || 500).json({
+    error: err.message || "Internal server error",
+    recovered: true,
+  });
+});
+
 ensurePortAvailable(PORT)
   .then(() => {
     server.listen(PORT, "0.0.0.0", () => {
       console.log(`Bridge API server running on port ${PORT}`);
+      startHealthMonitor();
     });
   })
   .catch((error) => {
     serverLogger.error(
-      `Failed to free required port ${PORT}: ${error?.message || error}`
+      `Failed to free required port ${PORT}: ${error?.message || error}`,
     );
     process.exit(1);
   });

@@ -2,7 +2,7 @@
  * Environment Synchronization Service
  *
  * Automatically synchronizes the workspace Arduino environment with the
- * arduino-bridge.config.json configuration file. This ensures that required
+ * arduino-requirements.txt configuration file. This ensures that required
  * board platforms and libraries are installed when opening a workspace.
  *
  * Key Responsibilities:
@@ -14,7 +14,7 @@
  * - **Progress Reporting**: Shows installation progress in VS Code notifications
  *
  * Sync Flow:
- * 1. On server start, reads arduino-bridge.config.json
+ * 1. On server start, reads arduino-requirements.txt
  * 2. Compares declared requirements with installed items
  * 3. Installs any missing platforms or libraries
  * 4. After any install/uninstall, updates config to match reality
@@ -46,7 +46,7 @@ export class EnvironmentSyncController {
   constructor(
     private readonly workspaceRoot: string,
     private readonly server: BridgeServer,
-    private readonly output: vscode.OutputChannel
+    private readonly output: vscode.OutputChannel,
   ) {}
 
   /**
@@ -55,12 +55,12 @@ export class EnvironmentSyncController {
   static async create(
     context: vscode.ExtensionContext,
     server: BridgeServer,
-    output: vscode.OutputChannel
+    output: vscode.OutputChannel,
   ): Promise<EnvironmentSyncController | undefined> {
     const workspace = vscode.workspace.workspaceFolders?.[0];
     if (!workspace) {
       output.appendLine(
-        "[Env Sync] No workspace folder detected; skipping environment sync"
+        "[Env Sync] No workspace folder detected; skipping environment sync",
       );
       return undefined;
     }
@@ -68,19 +68,19 @@ export class EnvironmentSyncController {
     const controller = new EnvironmentSyncController(
       workspace.uri.fsPath,
       server,
-      output
+      output,
     );
 
     try {
       await ensureEnvironmentConfig(workspace.uri.fsPath);
     } catch (error: any) {
       output.appendLine(
-        `[Env Sync] Failed to ensure ${CONFIG_FILE_NAME}: ${error.message}`
+        `[Env Sync] Failed to ensure ${CONFIG_FILE_NAME}: ${error.message}`,
       );
     }
 
     const watcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(workspace, CONFIG_FILE_NAME)
+      new vscode.RelativePattern(workspace, CONFIG_FILE_NAME),
     );
 
     const scheduleSync = () => {
@@ -124,7 +124,7 @@ export class EnvironmentSyncController {
         this.needsSyncOnStart = true;
         if (force) {
           this.output.appendLine(
-            "[Env Sync] Server not running; deferring environment sync"
+            "[Env Sync] Server not running; deferring environment sync",
           );
         }
         return;
@@ -142,7 +142,7 @@ export class EnvironmentSyncController {
         config = await readEnvironmentConfig(this.workspaceRoot);
       } catch (error: any) {
         this.output.appendLine(
-          `[Env Sync] Failed to read ${CONFIG_FILE_NAME}: ${error.message}`
+          `[Env Sync] Failed to read ${CONFIG_FILE_NAME}: ${error.message}`,
         );
         return;
       }
@@ -164,11 +164,11 @@ export class EnvironmentSyncController {
     const installedLibraries = await this.fetchInstalledLibraries(port);
 
     const missingPlatforms = config.platforms.filter(
-      (platform) => !this.isPlatformSatisfied(platform, installedPlatforms)
+      (platform) => !this.isPlatformSatisfied(platform, installedPlatforms),
     );
 
     const missingLibraries = config.libraries.filter(
-      (library) => !this.isLibrarySatisfied(library, installedLibraries)
+      (library) => !this.isLibrarySatisfied(library, installedLibraries),
     );
 
     if (missingPlatforms.length === 0 && missingLibraries.length === 0) {
@@ -187,12 +187,13 @@ export class EnvironmentSyncController {
       },
       async (progress) => {
         let completed = 0;
+        const errors: string[] = [];
 
         if (missingPlatforms.length > 0) {
           this.output.appendLine(
             `[Env Sync] Installing board platforms: ${missingPlatforms
               .map((p) => (p.version ? `${p.id}@${p.version}` : p.id))
-              .join(", ")}`
+              .join(", ")}`,
           );
 
           for (const platform of missingPlatforms) {
@@ -204,8 +205,12 @@ export class EnvironmentSyncController {
               increment: (100 / totalItems) * 0.1,
             });
 
-            await this.installPlatform(port, platform);
-            completed++;
+            const error = await this.installPlatform(port, platform);
+            if (error) {
+              errors.push(`Platform ${label}: ${error}`);
+            } else {
+              completed++;
+            }
             progress.report({
               increment: (100 / totalItems) * 0.9,
             });
@@ -216,7 +221,7 @@ export class EnvironmentSyncController {
           this.output.appendLine(
             `[Env Sync] Installing libraries: ${missingLibraries
               .map((l) => (l.version ? `${l.name}@${l.version}` : l.name))
-              .join(", ")}`
+              .join(", ")}`,
           );
 
           for (const library of missingLibraries) {
@@ -228,27 +233,37 @@ export class EnvironmentSyncController {
               increment: (100 / totalItems) * 0.1,
             });
 
-            await this.installLibrary(port, library);
-            completed++;
+            const error = await this.installLibrary(port, library);
+            if (error) {
+              errors.push(`Library ${label}: ${error}`);
+            } else {
+              completed++;
+            }
             progress.report({
               increment: (100 / totalItems) * 0.9,
             });
           }
         }
 
-        vscode.window.showInformationMessage(
-          `Arduino Bridge: Installed ${completed} item(s) from config`
-        );
-      }
+        if (errors.length > 0) {
+          const message = `Arduino Bridge Sync encountered errors:\n${errors.join("\n")}`;
+          this.output.appendLine(`[Env Sync] ${message}`);
+          vscode.window.showErrorMessage(message);
+        } else {
+          vscode.window.showInformationMessage(
+            `Arduino Bridge: Installed ${completed} item(s) from config`,
+          );
+        }
+      },
     );
   }
 
   private async fetchInstalledPlatforms(
-    port: number
+    port: number,
   ): Promise<Array<{ id: string; installedVersion?: string | null }>> {
     try {
       const response = await fetch(
-        `http://localhost:${port}/api/cli/cores/installed`
+        `http://localhost:${port}/api/cli/cores/installed`,
       );
       const data = (await response.json()) as {
         success: boolean;
@@ -262,18 +277,18 @@ export class EnvironmentSyncController {
       return data.platforms;
     } catch (error: any) {
       this.output.appendLine(
-        `[Env Sync] Failed to query installed platforms: ${error.message}`
+        `[Env Sync] Failed to query installed platforms: ${error.message}`,
       );
       return [];
     }
   }
 
   private async fetchInstalledLibraries(
-    port: number
+    port: number,
   ): Promise<Array<{ name: string; installedVersion?: string | null }>> {
     try {
       const response = await fetch(
-        `http://localhost:${port}/api/cli/libraries/installed`
+        `http://localhost:${port}/api/cli/libraries/installed`,
       );
       const data = (await response.json()) as {
         success: boolean;
@@ -287,7 +302,7 @@ export class EnvironmentSyncController {
       return data.libraries;
     } catch (error: any) {
       this.output.appendLine(
-        `[Env Sync] Failed to query installed libraries: ${error.message}`
+        `[Env Sync] Failed to query installed libraries: ${error.message}`,
       );
       return [];
     }
@@ -295,8 +310,8 @@ export class EnvironmentSyncController {
 
   private async installPlatform(
     port: number,
-    platform: PlatformRequirement
-  ): Promise<void> {
+    platform: PlatformRequirement,
+  ): Promise<string | null> {
     const target = platform.version
       ? `${platform.id}@${platform.version}`
       : platform.id;
@@ -311,7 +326,7 @@ export class EnvironmentSyncController {
             platformId: platform.id,
             version: platform.version ?? null,
           }),
-        }
+        },
       );
 
       const result = (await response.json()) as {
@@ -321,24 +336,27 @@ export class EnvironmentSyncController {
 
       if (result.success) {
         this.output.appendLine(`[Env Sync] ✓ Installed ${target}`);
+        return null;
       } else {
+        const msg = result.error || "Unknown error";
         this.output.appendLine(
-          `[Env Sync] ⚠️ Failed to install ${target}: ${
-            result.error || "Unknown error"
-          }`
+          `[Env Sync] ⚠️ Failed to install ${target}: ${msg}`,
         );
+        return msg;
       }
     } catch (error: any) {
+      const msg = error.message;
       this.output.appendLine(
-        `[Env Sync] ⚠️ Failed to install ${target}: ${error.message}`
+        `[Env Sync] ⚠️ Failed to install ${target}: ${msg}`,
       );
+      return msg;
     }
   }
 
   private async installLibrary(
     port: number,
-    library: LibraryRequirement
-  ): Promise<void> {
+    library: LibraryRequirement,
+  ): Promise<string | null> {
     const target = library.version
       ? `${library.name}@${library.version}`
       : library.name;
@@ -354,7 +372,7 @@ export class EnvironmentSyncController {
             version: library.version ?? null,
             installDeps: true,
           }),
-        }
+        },
       );
 
       const result = (await response.json()) as {
@@ -364,23 +382,26 @@ export class EnvironmentSyncController {
 
       if (result.success) {
         this.output.appendLine(`[Env Sync] ✓ Installed ${target}`);
+        return null;
       } else {
+        const msg = result.error || "Unknown error";
         this.output.appendLine(
-          `[Env Sync] ⚠️ Failed to install ${target}: ${
-            result.error || "Unknown error"
-          }`
+          `[Env Sync] ⚠️ Failed to install ${target}: ${msg}`,
         );
+        return msg;
       }
     } catch (error: any) {
+      const msg = error.message;
       this.output.appendLine(
-        `[Env Sync] ⚠️ Failed to install ${target}: ${error.message}`
+        `[Env Sync] ⚠️ Failed to install ${target}: ${msg}`,
       );
+      return msg;
     }
   }
 
   private isPlatformSatisfied(
     requirement: PlatformRequirement,
-    installed: Array<{ id: string; installedVersion?: string | null }>
+    installed: Array<{ id: string; installedVersion?: string | null }>,
   ): boolean {
     return installed.some((platform) => {
       if (platform.id !== requirement.id) {
@@ -397,7 +418,7 @@ export class EnvironmentSyncController {
 
   private isLibrarySatisfied(
     requirement: LibraryRequirement,
-    installed: Array<{ name: string; installedVersion?: string | null }>
+    installed: Array<{ name: string; installedVersion?: string | null }>,
   ): boolean {
     return installed.some((library) => {
       if (library.name !== requirement.name) {
@@ -419,7 +440,7 @@ export class EnvironmentSyncController {
   async syncInstalledToConfig(): Promise<void> {
     if (!this.server.isRunning()) {
       this.output.appendLine(
-        "[Env Sync] Server not running; cannot sync installed items to config"
+        "[Env Sync] Server not running; cannot sync installed items to config",
       );
       return;
     }
@@ -443,7 +464,7 @@ export class EnvironmentSyncController {
         (platform) => ({
           id: platform.id,
           version: platform.installedVersion || null,
-        })
+        }),
       );
 
       // Build new libraries list from installed libraries
@@ -451,7 +472,7 @@ export class EnvironmentSyncController {
         (library) => ({
           name: library.name,
           version: library.installedVersion || null,
-        })
+        }),
       );
 
       // Update config
@@ -462,11 +483,11 @@ export class EnvironmentSyncController {
       await writeEnvironmentConfig(this.workspaceRoot, config);
 
       this.output.appendLine(
-        `[Env Sync] Updated config with ${newPlatforms.length} platforms, ${newLibraries.length} libraries`
+        `[Env Sync] Updated config with ${newPlatforms.length} platforms, ${newLibraries.length} libraries`,
       );
     } catch (error: any) {
       this.output.appendLine(
-        `[Env Sync] Failed to sync installed items to config: ${error.message}`
+        `[Env Sync] Failed to sync installed items to config: ${error.message}`,
       );
     }
   }

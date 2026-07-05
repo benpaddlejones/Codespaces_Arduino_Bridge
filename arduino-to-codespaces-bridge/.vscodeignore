@@ -2,11 +2,15 @@
 .github/**
 src/**
 test/**
+out/**
 node_modules/**
 web-client/**
+scripts/**
 !dist/**
+!bin/**
 *.map
 *.ts
+*.vsix
 .gitignore
 .eslintrc.json
 tsconfig.json

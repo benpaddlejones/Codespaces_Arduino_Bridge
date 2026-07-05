@@ -9,7 +9,7 @@
  * - Global error handling and resilience
  *
  * @module client/main
- * @version 1.0.15
+ * @version 1.0.16
  */
 
 import { SerialManager } from "./services/SerialManager.js";
@@ -19,6 +19,7 @@ import { PlotterUI } from "./ui/PlotterUI.js";
 import { BoardManagerUI } from "./ui/BoardManagerUI.js";
 import { LibraryManagerUI } from "./ui/LibraryManagerUI.js";
 import { ReferenceUI } from "./ui/ReferenceUI.js";
+import { trapFocus, releaseFocus } from "./ui/focusTrap.js";
 import { Logger } from "../shared/Logger.js";
 
 // =============================================================================
@@ -29,7 +30,7 @@ import { Logger } from "../shared/Logger.js";
 const logger = new Logger("Client");
 
 /** Client version for cache debugging - update when making changes */
-const CLIENT_VERSION = "1.0.15";
+const CLIENT_VERSION = "1.0.17";
 
 /** Default baud rate for serial connections */
 const DEFAULT_BAUD_RATE = 115200;
@@ -127,7 +128,7 @@ function startHealthMonitoring() {
   }
   healthCheckInterval = setInterval(
     checkServerHealth,
-    HEALTH_CHECK_INTERVAL_MS
+    HEALTH_CHECK_INTERVAL_MS,
   );
   logger.info("Started server health monitoring");
 }
@@ -275,7 +276,7 @@ async function verifyServerVersion() {
 
     if (data.version !== CLIENT_VERSION) {
       logger.warn(
-        `VERSION MISMATCH! Client: ${CLIENT_VERSION}, Server: ${data.version}`
+        `VERSION MISMATCH! Client: ${CLIENT_VERSION}, Server: ${data.version}`,
       );
       setBridgeStatus({
         online: false,
@@ -342,6 +343,96 @@ const mismatchSelected = document.getElementById("mismatchSelected");
 const mismatchContinueBtn = document.getElementById("mismatchContinueBtn");
 const mismatchCancelBtn = document.getElementById("mismatchCancelBtn");
 
+// I2C Scan Button
+const i2cScanBtn = document.getElementById("i2cScanBtn");
+
+// DFU Modal Elements
+const dfuModal = document.getElementById("dfuModal");
+const dfuModalMessage = document.getElementById("dfuModalMessage");
+const dfuSelectBtn = document.getElementById("dfuSelectBtn");
+const dfuCancelBtn = document.getElementById("dfuCancelBtn");
+
+/** @type {boolean} Guard against concurrent DFU device requests */
+let dfuRequestInProgress = false;
+
+// WebUSB requestDevice() must run inside a user gesture. The DFU strategy
+// calls this helper when it needs the user to pick the DFU device: show a
+// modal whose button click provides the gesture.
+if (
+  typeof window !== "undefined" &&
+  typeof window.requestDfuDevice !== "function"
+) {
+  window.requestDfuDevice = (filters, message) => {
+    if (!dfuModal || !dfuSelectBtn || !dfuCancelBtn) {
+      // No modal in the DOM - fall back to a direct request (may fail
+      // outside a user gesture, but better than nothing)
+      logger.info("Select the Arduino DFU device from the USB chooser");
+      return navigator.usb.requestDevice({ filters });
+    }
+    if (dfuRequestInProgress) {
+      return Promise.reject(
+        new Error("A DFU device request is already in progress"),
+      );
+    }
+    dfuRequestInProgress = true;
+    return new Promise((resolve, reject) => {
+      const cleanup = () => {
+        dfuRequestInProgress = false;
+        closeModal(dfuModal);
+        dfuSelectBtn.disabled = false;
+        dfuCancelBtn.disabled = false;
+        dfuSelectBtn.removeEventListener("click", handleSelect);
+        dfuCancelBtn.removeEventListener("click", handleCancel);
+      };
+      const handleSelect = async () => {
+        try {
+          dfuSelectBtn.disabled = true;
+          dfuCancelBtn.disabled = true;
+          const device = await navigator.usb.requestDevice({ filters });
+          window._dfuDevice = device;
+          cleanup();
+          resolve(device);
+        } catch (error) {
+          cleanup();
+          reject(error);
+        }
+      };
+      const handleCancel = () => {
+        cleanup();
+        reject(new Error("User cancelled DFU device selection"));
+      };
+
+      logger.info("Select the Arduino DFU device from the USB chooser");
+      dfuModalMessage.textContent =
+        message ||
+        "Click the button below, then choose the Arduino DFU device in the USB chooser.";
+      openModal(dfuModal, dfuCancelBtn);
+      dfuSelectBtn.addEventListener("click", handleSelect);
+      dfuCancelBtn.addEventListener("click", handleCancel);
+    });
+  };
+}
+
+/**
+ * Show a modal overlay with keyboard focus trapped inside it.
+ * ESC activates the modal's cancel button.
+ * @param {HTMLElement} modal - Modal overlay element
+ * @param {HTMLElement} [cancelBtn] - Button to click when ESC is pressed
+ */
+function openModal(modal, cancelBtn) {
+  modal.style.display = "flex";
+  trapFocus(modal, () => cancelBtn && cancelBtn.click());
+}
+
+/**
+ * Hide a modal overlay and release its focus trap.
+ * @param {HTMLElement} modal - Modal overlay element
+ */
+function closeModal(modal) {
+  releaseFocus(modal);
+  modal.style.display = "none";
+}
+
 let isPlotterMode = false;
 
 function setupConsoleBridge(terminalInstance) {
@@ -398,7 +489,7 @@ function setupConsoleBridge(terminalInstance) {
     }
     const normalized = message.replace(/\r\n|\r|\n/g, "\r\n");
     terminalInstance.write(
-      `\r\n${style.color}[${timestamp}] ${style.icon} ${normalized}\u001b[0m\r\n`
+      `\r\n${style.color}[${timestamp}] ${style.icon} ${normalized}\u001b[0m\r\n`,
     );
   };
 
@@ -685,7 +776,7 @@ async function loadLibraryExamples(currentSelection, onSelectionFound) {
     // For each installed library, get its examples
     for (const lib of libraries) {
       const examplesResponse = await fetch(
-        `/api/cli/libraries/${encodeURIComponent(lib.name)}/examples`
+        `/api/cli/libraries/${encodeURIComponent(lib.name)}/examples`,
       );
 
       if (!examplesResponse.ok) continue;
@@ -825,28 +916,45 @@ boardSelect.addEventListener("change", async () => {
     const board = availableBoards.find((b) => b.fqbn === boardSelect.value);
     const boardName = board?.name || "This board";
     terminal.write(
-      `\r\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\r\n`
+      `\r\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\r\n`,
     );
     terminal.write(`ℹ️  ${boardName} uses download mode.\r\n`);
     terminal.write(
-      `   • Click "Compile & Download" to get the firmware file\r\n`
+      `   • Click "Compile & Download" to get the firmware file\r\n`,
     );
     terminal.write(
-      `   • Flash the file to your board using the board's bootloader\r\n`
+      `   • Flash the file to your board using the board's bootloader\r\n`,
     );
     terminal.write(
-      `   • After flashing, use "Connect" to open the Serial Monitor\r\n`
+      `   • After flashing, use "Connect" to open the Serial Monitor\r\n`,
     );
     terminal.write(
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\r\n`
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\r\n`,
     );
   }
 });
 
 // Compile Function
-async function compileSketch() {
-  const sketchPath = sketchSelect.value;
+async function compileSketch(sketchPathOverride = null) {
+  // Defensive guards: recovered 1.1.x fix for compile attempts firing
+  // before the DOM (or a selection) is ready
+  if (!sketchSelect || !boardSelect) {
+    logger.error("compileSketch: boardSelect/sketchSelect element is null!");
+    terminal.write("\r\nInternal error: UI not ready - reload the page.\r\n");
+    return null;
+  }
+
+  const sketchPath = sketchPathOverride || sketchSelect.value;
   const fqbn = boardSelect.value;
+
+  if (!fqbn) {
+    terminal.write("\r\nCompile aborted: No board selected\r\n");
+    return null;
+  }
+  if (!sketchPath) {
+    terminal.write("\r\nCompile aborted: No sketch selected\r\n");
+    return null;
+  }
 
   logger.info(`Compiling sketch: '${sketchPath}' for board: '${fqbn}'`);
   terminal.write(`\r\n[Debug] Selected Sketch: ${sketchPath}\r\n`);
@@ -869,26 +977,26 @@ async function compileSketch() {
     if (Array.isArray(data.missingIncludes) && data.missingIncludes.length) {
       // Separate local includes ("header.h") from library includes (<header.h>)
       const localIncludes = data.missingIncludes.filter(
-        (item) => item.isLibraryInclude === false
+        (item) => item.isLibraryInclude === false,
       );
       const libraryIncludes = data.missingIncludes.filter(
-        (item) => item.isLibraryInclude !== false
+        (item) => item.isLibraryInclude !== false,
       );
 
       if (localIncludes.length > 0) {
         terminal.write(
-          '\r\n⚠ Missing local files (using #include "file.h" syntax):\r\n'
+          '\r\n⚠ Missing local files (using #include "file.h" syntax):\r\n',
         );
         localIncludes.forEach((item) => {
           terminal.write(
-            `   • "${item.header}" → Add ${item.header} and ${item.query}.cpp to your sketch folder\r\n`
+            `   • "${item.header}" → Add ${item.header} and ${item.query}.cpp to your sketch folder\r\n`,
           );
         });
       }
 
       if (libraryIncludes.length > 0) {
         terminal.write(
-          "\r\n⚠ Missing libraries (using #include <lib.h> syntax):\r\n"
+          "\r\n⚠ Missing libraries (using #include <lib.h> syntax):\r\n",
         );
         libraryIncludes.forEach((item) => {
           const suggestionNames = Array.isArray(item.suggestions)
@@ -900,17 +1008,17 @@ async function compileSketch() {
               `   • <${
                 item.header
               }> → Install via Library Manager: ${suggestionNames.join(
-                ", "
-              )}\r\n`
+                ", ",
+              )}\r\n`,
             );
           } else {
             terminal.write(
-              `   • <${item.header}> → Search Library Manager for "${item.query}"\r\n`
+              `   • <${item.header}> → Search Library Manager for "${item.query}"\r\n`,
             );
           }
         });
         terminal.write(
-          "   💡 After installing, recompile to refresh IntelliSense\r\n"
+          "   💡 After installing, recompile to refresh IntelliSense\r\n",
         );
       }
     }
@@ -935,38 +1043,45 @@ compileBtn.addEventListener("click", async () => {
 
 // Helper to handle the upload process (reusable for retries)
 async function handleUpload(port, firmwareData, fqbn) {
+  let activePort = port;
   try {
     // 4. Re-open port for Flashing
     // Ensure any previous connection is fully closed first
-    if (serialManager.provider.port === port) {
+    if (serialManager.provider.port === activePort) {
       await serialManager.disconnect();
     }
 
     // Reopen port at 115200 for AVR upload (DTR toggle needs open port)
-    if (!port.readable || !port.writable) {
-      await port.open({ baudRate: 115200 });
+    if (!activePort.readable || !activePort.writable) {
+      await activePort.open({ baudRate: 115200 });
     }
 
-    // 5. Flash
-    await uploadManager.upload(
-      port,
-      firmwareData,
-      (progress, status) => {
-        if (status) {
-          terminal.write(`\r${status}: ${progress}%`);
-        } else {
-          terminal.write(`\rFlashing: ${progress}%`);
-        }
-      },
-      fqbn
-    );
+    // 5. Flash. The upload may return a different port when the device
+    // re-enumerated into its bootloader (BOSSA/DFU boards).
+    activePort =
+      (await uploadManager.upload(
+        activePort,
+        firmwareData,
+        (progress, status) => {
+          if (status) {
+            terminal.write(`\r${status}: ${progress}%`);
+          } else {
+            terminal.write(`\rFlashing: ${progress}%`);
+          }
+        },
+        fqbn,
+      )) || activePort;
     terminal.write("\r\nUpload Complete!\r\n");
 
     // 6. Reconnect Serial Monitor using current baud selection
     try {
       // Close port if still open
-      if (port.readable || port.writable) {
-        await port.close();
+      if (activePort.readable || activePort.writable) {
+        try {
+          await activePort.close();
+        } catch (closeError) {
+          logger.warn("Port close warning (may already be closed)", closeError);
+        }
       }
 
       const reconnectBaud =
@@ -976,8 +1091,44 @@ async function handleUpload(port, firmwareData, fqbn) {
       lastWorkingBaudRate = reconnectBaud;
       baudSelect.value = reconnectBaud.toString();
 
-      // Connect with selected baud rate
-      await serialManager.connect(reconnectBaud, port);
+      // The device resets after flashing and usually re-enumerates as a
+      // NEW SerialPort object - reconnecting to the old handle fails.
+      // Wait for the restart, then look up the re-enumerated port by VID.
+      terminal.write("\r\nWaiting for device to restart...\r\n");
+      await new Promise((r) => setTimeout(r, 2000));
+
+      let reconnectPort = activePort;
+      const portInfo = activePort.getInfo();
+      if (portInfo.usbVendorId) {
+        try {
+          const candidate = (await navigator.serial.getPorts()).find(
+            (p) => p.getInfo().usbVendorId === portInfo.usbVendorId,
+          );
+          if (candidate) {
+            reconnectPort = candidate;
+            logger.info("Found re-enumerated port for reconnection");
+          }
+        } catch (enumError) {
+          logger.warn("Could not enumerate ports for reconnection", enumError);
+        }
+      }
+
+      // Retry the connection - re-enumeration timing varies by board
+      let connected = false;
+      for (let attempt = 1; attempt <= 3 && !connected; attempt++) {
+        try {
+          await serialManager.connect(reconnectBaud, reconnectPort);
+          connected = true;
+        } catch (attemptError) {
+          logger.warn(`Reconnect attempt ${attempt}/3 failed`, attemptError);
+          if (attempt < 3) {
+            await new Promise((r) => setTimeout(r, 1000));
+          }
+        }
+      }
+      if (!connected) {
+        throw new Error("Could not reconnect after 3 attempts");
+      }
 
       try {
         await serialManager.write("\r\n");
@@ -1013,17 +1164,17 @@ async function handleUpload(port, firmwareData, fqbn) {
     if (error.code === "BOOTLOADER_PORT_NEEDED") {
       terminal.write(`\r\n\x1b[1;36m${error.message}\x1b[0m\r\n`);
       terminal.write(
-        `\r\n\x1b[1;33mThe Arduino has entered bootloader mode and appears as a NEW USB device.\x1b[0m\r\n`
+        `\r\n\x1b[1;33mThe Arduino has entered bootloader mode and appears as a NEW USB device.\x1b[0m\r\n`,
       );
       terminal.write(
-        `\x1b[1;33mPlease select the bootloader port (may show as "Arduino" or different name).\x1b[0m\r\n`
+        `\x1b[1;33mPlease select the bootloader port (may show as "Arduino" or different name).\x1b[0m\r\n`,
       );
 
       // Show Modal for bootloader port selection
-      bootloaderModal.style.display = "flex";
+      openModal(bootloaderModal, modalCancelBtn);
 
       const handleBootloaderSelect = async () => {
-        bootloaderModal.style.display = "none";
+        closeModal(bootloaderModal);
         cleanupBootloader();
 
         try {
@@ -1040,8 +1191,8 @@ async function handleUpload(port, firmwareData, fqbn) {
           const info = newPort.getInfo();
           terminal.write(
             `\r\nSelected bootloader port (VID:${info.usbVendorId?.toString(
-              16
-            )}, PID:${info.usbProductId?.toString(16)})\r\n`
+              16,
+            )}, PID:${info.usbProductId?.toString(16)})\r\n`,
           );
           terminal.write("\r\nFlashing to bootloader...\r\n");
 
@@ -1056,7 +1207,7 @@ async function handleUpload(port, firmwareData, fqbn) {
                 terminal.write(`\rFlashing: ${progress}%`);
               }
             },
-            fqbn
+            fqbn,
           );
           terminal.write("\r\nUpload Complete!\r\n");
 
@@ -1076,14 +1227,14 @@ async function handleUpload(port, firmwareData, fqbn) {
             } catch (handshakeError) {
               logger.warn(
                 "Unable to send post-bootloader handshake",
-                handshakeError
+                handshakeError,
               );
             }
             // Resume serial monitor after successful bootloader reconnect
             serialManager.resume();
           } catch (e) {
             terminal.write(
-              "\r\nDevice rebooted. Please reconnect manually.\r\n"
+              "\r\nDevice rebooted. Please reconnect manually.\r\n",
             );
             serialManager.resume();
             connectBtn.disabled = false;
@@ -1103,7 +1254,7 @@ async function handleUpload(port, firmwareData, fqbn) {
       };
 
       const handleBootloaderCancel = () => {
-        bootloaderModal.style.display = "none";
+        closeModal(bootloaderModal);
         cleanupBootloader();
         terminal.write("\r\nUpload Cancelled.\r\n");
         serialManager.resume();
@@ -1126,14 +1277,14 @@ async function handleUpload(port, firmwareData, fqbn) {
 
     if (error.code === "RESET_REQUIRED") {
       terminal.write(
-        `\r\n\x1b[1;33mAction Required: ${error.message}\x1b[0m\r\n`
+        `\r\n\x1b[1;33mAction Required: ${error.message}\x1b[0m\r\n`,
       );
 
       // Show Modal
-      bootloaderModal.style.display = "flex";
+      openModal(bootloaderModal, modalCancelBtn);
 
       const handleSelect = async () => {
-        bootloaderModal.style.display = "none";
+        closeModal(bootloaderModal);
         cleanup();
 
         try {
@@ -1152,7 +1303,7 @@ async function handleUpload(port, firmwareData, fqbn) {
       };
 
       const handleCancel = () => {
-        bootloaderModal.style.display = "none";
+        closeModal(bootloaderModal);
         cleanup();
         terminal.write("\r\nUpload Cancelled.\r\n");
         serialManager.resume();
@@ -1271,7 +1422,7 @@ compileUploadBtn.addEventListener("click", async () => {
       URL.revokeObjectURL(downloadUrl);
 
       terminal.write(
-        `\r\n\x1b[1;32mFirmware downloaded: ${filename}\x1b[0m\r\n`
+        `\r\n\x1b[1;32mFirmware downloaded: ${filename}\x1b[0m\r\n`,
       );
 
       // Show upload instructions
@@ -1345,6 +1496,100 @@ function getDefaultBaudRate(fqbn) {
   return 115200;
 }
 
+// ==========================================
+// I2C Scanner Tool
+// ==========================================
+
+/** Compile path of the bundled I2C scanner sketch (resolved server-side) */
+const I2C_SCANNER_SKETCH = "__TOOL__:i2c-scanner";
+
+/** Baud rate used by the bundled I2C scanner sketch */
+const I2C_SCANNER_BAUD = 115200;
+
+/**
+ * Compile and upload the bundled I2C scanner sketch, then show the scan
+ * results in the serial monitor. Reuses the standard upload pipeline, so
+ * board-specific protocols are untouched.
+ */
+async function runI2cScan() {
+  const fqbn = boardSelect.value;
+
+  if (!fqbn) {
+    terminal.write("\r\n[I2C] Select a board first.\r\n");
+    return;
+  }
+
+  if (getBoardUploadMode() === "uf2-download") {
+    terminal.write(
+      "\r\n[I2C] This board uses download mode, so the scanner cannot be uploaded automatically.\r\n",
+    );
+    terminal.write(
+      "[I2C] Compile the bundled I2C scanner manually or use a serial-upload board.\r\n",
+    );
+    return;
+  }
+
+  if (!serialManager.provider.port) {
+    terminal.write("\r\n[I2C] Connect to the board first.\r\n");
+    return;
+  }
+
+  const confirmed = window.confirm(
+    "The I2C scanner will REPLACE the sketch currently on the board. " +
+      "Re-upload your own sketch afterwards to restore it.\n\nContinue?",
+  );
+  if (!confirmed) {
+    terminal.write("\r\n[I2C] Scan cancelled.\r\n");
+    return;
+  }
+
+  // Capture port immediately in case it is lost during compile
+  const savedPort = serialManager.provider.port;
+
+  // Check for board mismatch before starting upload
+  const shouldProceed = await checkBoardMismatch(savedPort, fqbn);
+  if (!shouldProceed) {
+    return;
+  }
+
+  serialManager.pause();
+  terminal.write("\r\n[I2C] Compiling scanner sketch...\r\n");
+
+  const artifactUrl = await compileSketch(I2C_SCANNER_SKETCH);
+  if (!artifactUrl) {
+    serialManager.resume();
+    terminal.write("[Serial Monitor resumed]\r\n");
+    return;
+  }
+
+  // The scanner prints at 115200 baud - reconnect at that rate after upload
+  baudSelect.value = I2C_SCANNER_BAUD.toString();
+  lastWorkingBaudRate = I2C_SCANNER_BAUD;
+
+  try {
+    terminal.write("Downloading firmware...\r\n");
+    const response = await fetch(artifactUrl);
+    if (!response.ok) throw new Error("Failed to download firmware");
+    const firmwareData = await response.arrayBuffer();
+
+    if (serialManager.provider.port) {
+      await serialManager.disconnect();
+    }
+
+    await handleUpload(savedPort, firmwareData, fqbn);
+    terminal.write(
+      "\r\n[I2C] Scanner running — results appear above every 10 seconds.\r\n",
+    );
+  } catch (error) {
+    terminal.write(`\r\n[I2C] Error: ${error.message}\r\n`);
+    serialManager.resume();
+  }
+}
+
+if (i2cScanBtn) {
+  i2cScanBtn.addEventListener("click", runI2cScan);
+}
+
 /**
  * Check if the connected port's VID/PID matches the selected board.
  * Returns a promise that resolves to true if upload should proceed,
@@ -1377,10 +1622,10 @@ function checkBoardMismatch(port, fqbn) {
 
     // Check if connected VID/PID matches any of the board's known VID/PIDs
     const vidMatch = selectedBoard.vid.some(
-      (v) => parseInt(v) === portInfo.usbVendorId
+      (v) => parseInt(v) === portInfo.usbVendorId,
     );
     const pidMatch = selectedBoard.pid.some(
-      (p) => parseInt(p) === portInfo.usbProductId
+      (p) => parseInt(p) === portInfo.usbProductId,
     );
 
     if (vidMatch && pidMatch) {
@@ -1414,22 +1659,22 @@ function checkBoardMismatch(port, fqbn) {
     mismatchSelected.textContent = selectedBoard.name;
 
     // Show modal
-    mismatchModal.style.display = "flex";
+    openModal(mismatchModal, mismatchCancelBtn);
 
     const handleContinue = () => {
-      mismatchModal.style.display = "none";
+      closeModal(mismatchModal);
       cleanup();
       logger.warn(
-        `Board Mismatch: User chose to proceed. Connected: ${connectedLabel}, Selected: ${selectedBoard.name}`
+        `Board Mismatch: User chose to proceed. Connected: ${connectedLabel}, Selected: ${selectedBoard.name}`,
       );
       resolve(true);
     };
 
     const handleCancel = () => {
-      mismatchModal.style.display = "none";
+      closeModal(mismatchModal);
       cleanup();
       terminal.write(
-        "\r\n\x1b[1;33mUpload cancelled due to board mismatch.\x1b[0m\r\n"
+        "\r\n\x1b[1;33mUpload cancelled due to board mismatch.\x1b[0m\r\n",
       );
       resolve(false);
     };
@@ -1446,10 +1691,29 @@ function checkBoardMismatch(port, fqbn) {
 
 // Connect Button Handler
 connectBtn.addEventListener("click", async () => {
+  // Request the port first (user selects from dialog). Cancelling the
+  // browser's port picker throws NotFoundError/NotAllowedError - that is a
+  // normal user action, not a fault, so show a friendly message instead of
+  // a red error.
+  let port;
   try {
-    // First, request the port (user selects from dialog)
-    const port = await navigator.serial.requestPort();
+    port = await navigator.serial.requestPort();
+  } catch (error) {
+    if (
+      error &&
+      (error.name === "NotFoundError" || error.name === "NotAllowedError")
+    ) {
+      terminal.write(
+        "\r\n[Bridge] Connection cancelled — no serial port selected.\r\n",
+      );
+      return;
+    }
+    logger.error("Port selection failed", error);
+    terminal.write(`\r\nError: ${error.message}\r\n`);
+    return;
+  }
 
+  try {
     // Get port info for board detection
     const portInfo = port.getInfo();
     let detectedBoard = null;
@@ -1458,10 +1722,10 @@ connectBtn.addEventListener("click", async () => {
       detectedBoard = availableBoards.find((b) => {
         if (!b.vid || !b.pid) return false;
         const vidMatch = b.vid.some(
-          (v) => parseInt(v) === portInfo.usbVendorId
+          (v) => parseInt(v) === portInfo.usbVendorId,
         );
         const pidMatch = b.pid.some(
-          (p) => parseInt(p) === portInfo.usbProductId
+          (p) => parseInt(p) === portInfo.usbProductId,
         );
         return vidMatch && pidMatch;
       });
@@ -1549,7 +1813,7 @@ baudSelect.addEventListener("change", async () => {
       } catch (handshakeError) {
         console.warn(
           "[Client] Unable to send baud-change handshake:",
-          handshakeError
+          handshakeError,
         );
       }
       terminal.write(`Baud rate changed to ${newBaudRate}\r\n`);
@@ -1570,6 +1834,34 @@ baudSelect.addEventListener("change", async () => {
 // Handle incoming data for Terminal
 serialManager.provider.on("data", (data) => {
   terminal.write(data);
+});
+
+// Keep the UI in sync when the device is lost unexpectedly (unplug/reset).
+// Intentional disconnects (user click, upload flow) manage the UI themselves.
+serialManager.provider.on("disconnect", (info) => {
+  if (info && info.unexpected) {
+    terminal.write(
+      "\r\n\x1b[1;33m[Bridge] Device connection lost — attempting to reconnect...\x1b[0m\r\n",
+    );
+    updateConnectionUIState(false);
+    updateCompileButtons();
+  }
+});
+
+serialManager.provider.on("reconnect", () => {
+  terminal.write(
+    "\r\n\x1b[1;32m[Bridge] Reconnected to serial port.\x1b[0m\r\n",
+  );
+  updateConnectionUIState(true);
+  updateCompileButtons();
+});
+
+serialManager.provider.on("reconnect_failed", () => {
+  terminal.write(
+    "\r\n\x1b[1;31m[Bridge] Could not reconnect — please reconnect manually.\x1b[0m\r\n",
+  );
+  updateConnectionUIState(false);
+  updateCompileButtons();
 });
 
 // Handle parsed lines for Plotter

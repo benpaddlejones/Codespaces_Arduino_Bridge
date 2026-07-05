@@ -21,7 +21,7 @@ const esbuildProblemMatcherPlugin = {
         console.error(`✘ [ERROR] ${text}`);
         if (location) {
           console.error(
-            `    ${location.file}:${location.line}:${location.column}:`
+            `    ${location.file}:${location.line}:${location.column}:`,
           );
         }
       });
@@ -87,12 +87,21 @@ async function main() {
     __dirname,
     "web-client",
     "public",
-    "boards.json"
+    "boards.json",
   );
   const boardsDest = path.join(__dirname, "resources", "boards.json");
   if (fs.existsSync(boardsSource)) {
     fs.copyFileSync(boardsSource, boardsDest);
     console.log("Copied boards.json");
+  }
+
+  // Copy bundled tool sketches (e.g. I2C scanner) so the packaged server
+  // can compile them via __TOOL__:<id> paths
+  const toolsSource = path.join(__dirname, "web-client", "tools");
+  const toolsDest = path.join(__dirname, "dist", "tools");
+  if (fs.existsSync(toolsSource)) {
+    console.log("Copying tool sketches...");
+    copyDir(toolsSource, toolsDest);
   }
 
   const ctx = await esbuild.context({

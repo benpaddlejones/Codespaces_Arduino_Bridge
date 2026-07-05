@@ -70,9 +70,11 @@ let environmentSync: EnvironmentSyncController | undefined;
  * @param {vscode.ExtensionContext} context - Extension context
  */
 export async function activate(
-  context: vscode.ExtensionContext
+  context: vscode.ExtensionContext,
 ): Promise<void> {
-  outputChannel = vscode.window.createOutputChannel("Arduino Bridge");
+  outputChannel = vscode.window.createOutputChannel(
+    "Arduino to Codespaces Bridge",
+  );
   outputChannel.appendLine("Arduino to Codespaces Bridge is now active");
 
   // Set up clang-format configuration for Arduino code style
@@ -86,11 +88,11 @@ export async function activate(
   if (config.get("showStatusBar", true)) {
     statusBarItem = vscode.window.createStatusBarItem(
       vscode.StatusBarAlignment.Left,
-      100
+      100,
     );
-    statusBarItem.text = "$(plug) Arduino Bridge";
+    statusBarItem.text = "$(plug) Arduino to Codespaces Bridge";
     statusBarItem.command = "arduinoBridge.openBridge";
-    statusBarItem.tooltip = "Click to open Arduino Bridge";
+    statusBarItem.tooltip = "Click to open Arduino to Codespaces Bridge";
     statusBarItem.show();
     context.subscriptions.push(statusBarItem);
   }
@@ -103,44 +105,54 @@ export async function activate(
   environmentSync = await EnvironmentSyncController.create(
     context,
     server,
-    outputChannel
+    outputChannel,
   );
+
+  // Subscribe to server environment change events to sync config file
+  if (environmentSync) {
+    server.on("environmentChanged", async () => {
+      outputChannel.appendLine(
+        "[Extension] Environment changed, syncing to config file...",
+      );
+      await environmentSync!.syncInstalledToConfig();
+    });
+  }
 
   // Register tree views
   context.subscriptions.push(
     vscode.window.registerTreeDataProvider(
       "arduinoBridge.status",
-      statusProvider
+      statusProvider,
     ),
     vscode.window.registerTreeDataProvider(
       "arduinoBridge.boards",
-      boardsProvider
+      boardsProvider,
     ),
     vscode.window.registerTreeDataProvider(
       "arduinoBridge.libraries",
-      librariesProvider
-    )
+      librariesProvider,
+    ),
   );
 
   // Register commands
   context.subscriptions.push(
     vscode.commands.registerCommand("arduinoBridge.openBridge", () =>
-      openBridge(server!, outputChannel)
+      openBridge(server!, outputChannel),
     ),
     vscode.commands.registerCommand("arduinoBridge.startServer", () =>
-      startServer()
+      startServer(),
     ),
     vscode.commands.registerCommand("arduinoBridge.stopServer", () =>
-      stopServer()
+      stopServer(),
     ),
     vscode.commands.registerCommand("arduinoBridge.restartServer", () =>
-      restartServer()
+      restartServer(),
     ),
     vscode.commands.registerCommand("arduinoBridge.selectBoard", () =>
-      selectBoard(server!)
+      selectBoard(server!, outputChannel),
     ),
     vscode.commands.registerCommand("arduinoBridge.compileSketch", () =>
-      compileSketch(server!, outputChannel)
+      compileSketch(server!, outputChannel),
     ),
     vscode.commands.registerCommand(
       "arduinoBridge.refreshLibraries",
@@ -150,7 +162,7 @@ export async function activate(
         if (environmentSync) {
           await environmentSync.syncInstalledToConfig();
         }
-      }
+      },
     ),
     vscode.commands.registerCommand("arduinoBridge.refreshBoards", async () => {
       boardsProvider.refresh();
@@ -165,13 +177,13 @@ export async function activate(
         if (environmentSync) {
           await environmentSync.syncInstalledToConfig();
           vscode.window.showInformationMessage(
-            "Environment config synced with installed boards and libraries"
+            "Environment config synced with installed boards and libraries",
           );
         } else {
           vscode.window.showWarningMessage("Environment sync not available");
         }
-      }
-    )
+      },
+    ),
   );
 
   // Register output channel
@@ -183,7 +195,7 @@ export async function activate(
       if (e.affectsConfiguration("arduinoBridge")) {
         handleConfigurationChange();
       }
-    })
+    }),
   );
 
   // Auto-start server if configured
@@ -220,7 +232,7 @@ async function startServer(): Promise<void> {
     boardsProvider.refresh();
     librariesProvider.refresh();
     vscode.window.showInformationMessage(
-      `Arduino Bridge server started on port ${server.getPort()}`
+      `Arduino to Codespaces Bridge server started on port ${server.getPort()}`,
     );
     outputChannel.appendLine(`Server started on port ${server.getPort()}`);
   } catch (error: any) {
@@ -251,7 +263,9 @@ async function stopServer(): Promise<void> {
     boardsProvider.refresh();
     librariesProvider.refresh();
     environmentSync?.scheduleSync();
-    vscode.window.showInformationMessage("Arduino Bridge server stopped");
+    vscode.window.showInformationMessage(
+      "Arduino to Codespaces Bridge server stopped",
+    );
     outputChannel.appendLine("Server stopped");
   } catch (error: any) {
     vscode.window.showErrorMessage(`Failed to stop server: ${error.message}`);
@@ -284,19 +298,19 @@ function updateStatusBar(state: "running" | "stopped" | "error"): void {
 
   switch (state) {
     case "running":
-      statusBarItem.text = "$(plug) Arduino Bridge";
+      statusBarItem.text = "$(plug) Arduino to Codespaces Bridge";
       statusBarItem.backgroundColor = undefined;
-      statusBarItem.tooltip = `Arduino Bridge running on port ${server?.getPort()}`;
+      statusBarItem.tooltip = `Arduino to Codespaces Bridge running on port ${server?.getPort()}`;
       break;
     case "stopped":
-      statusBarItem.text = "$(plug) Arduino Bridge (Stopped)";
+      statusBarItem.text = "$(plug) Arduino to Codespaces Bridge (Stopped)";
       statusBarItem.backgroundColor = undefined;
-      statusBarItem.tooltip = "Click to start Arduino Bridge";
+      statusBarItem.tooltip = "Click to start Arduino to Codespaces Bridge";
       break;
     case "error":
-      statusBarItem.text = "$(plug) Arduino Bridge (Error)";
+      statusBarItem.text = "$(plug) Arduino to Codespaces Bridge (Error)";
       statusBarItem.backgroundColor = new vscode.ThemeColor(
-        "statusBarItem.errorBackground"
+        "statusBarItem.errorBackground",
       );
       statusBarItem.tooltip = "Arduino Bridge encountered an error";
       break;
@@ -314,7 +328,7 @@ function handleConfigurationChange(): void {
     if (!statusBarItem) {
       statusBarItem = vscode.window.createStatusBarItem(
         vscode.StatusBarAlignment.Left,
-        100
+        100,
       );
       statusBarItem.command = "arduinoBridge.openBridge";
     }
@@ -333,7 +347,7 @@ function handleConfigurationChange(): void {
  */
 async function setupClangFormat(
   context: vscode.ExtensionContext,
-  output: vscode.OutputChannel
+  output: vscode.OutputChannel,
 ): Promise<void> {
   const workspace = vscode.workspace.workspaceFolders?.[0];
   if (!workspace) {
@@ -344,7 +358,7 @@ async function setupClangFormat(
   const sourcePath = path.join(
     context.extensionPath,
     "resources",
-    "clang-format"
+    "clang-format",
   );
 
   try {
@@ -352,7 +366,7 @@ async function setupClangFormat(
     try {
       await fs.promises.access(targetPath, fs.constants.F_OK);
       output.appendLine(
-        "[Clang Format] .clang-format already exists, skipping"
+        "[Clang Format] .clang-format already exists, skipping",
       );
       return;
     } catch {
@@ -364,7 +378,7 @@ async function setupClangFormat(
       await fs.promises.access(sourcePath, fs.constants.F_OK);
     } catch {
       output.appendLine(
-        "[Clang Format] Source config not found in extension resources"
+        "[Clang Format] Source config not found in extension resources",
       );
       return;
     }
@@ -373,7 +387,7 @@ async function setupClangFormat(
     const content = await fs.promises.readFile(sourcePath, "utf8");
     await fs.promises.writeFile(targetPath, content, "utf8");
     output.appendLine(
-      "[Clang Format] Created .clang-format for Arduino code style"
+      "[Clang Format] Created .clang-format for Arduino code style",
     );
 
     // Configure VS Code to use clang-format for .ino files
@@ -383,10 +397,10 @@ async function setupClangFormat(
       await cppConfig.update(
         "clang_format_style",
         "file",
-        vscode.ConfigurationTarget.Workspace
+        vscode.ConfigurationTarget.Workspace,
       );
       output.appendLine(
-        "[Clang Format] Set C_Cpp.clang_format_style to 'file'"
+        "[Clang Format] Set C_Cpp.clang_format_style to 'file'",
       );
     }
   } catch (error: any) {
@@ -404,7 +418,11 @@ async function setupClangFormat(
 export function deactivate(): void {
   if (server?.isRunning()) {
     server.stop().catch((err: Error) => {
-      console.error("Error stopping server during deactivation:", err);
+      if (outputChannel) {
+        outputChannel.appendLine(
+          `Error stopping server during deactivation: ${err.message || err}`,
+        );
+      }
     });
   }
 }

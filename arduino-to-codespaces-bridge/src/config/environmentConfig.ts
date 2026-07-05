@@ -2,26 +2,23 @@
  * Environment Configuration Utilities
  *
  * Provides functions for managing the workspace-level arduino-bridge configuration
- * file (arduino-bridge.config.json). This configuration declares required board
+ * file (arduino-requirements.txt). This configuration declares required board
  * platforms and libraries, enabling reproducible Arduino development environments.
  *
  * Features:
- * - **Configuration Schema**: Version-tracked JSON format with platforms and libraries
+ * - **Configuration Schema**: Plain text format with platforms and libraries
  * - **Auto-normalization**: Cleans and validates configuration on read
  * - **Merge-friendly Output**: Sorted entries for clean git diffs
  * - **Concurrency Safety**: Write lock prevents file corruption from concurrent saves
+ * - **Legacy Migration**: Transparently migrates arduino-bridge.config.json
  *
  * Configuration File Format:
- * ```json
- * {
- *   "version": 1,
- *   "platforms": [
- *     { "id": "arduino:avr", "version": "1.8.6" }
- *   ],
- *   "libraries": [
- *     { "name": "Servo", "version": "1.2.1" }
- *   ]
- * }
+ * ```text
+ * # Platforms
+ * platform arduino:avr 1.8.6
+ *
+ * # Libraries
+ * library Servo 1.2.1
  * ```
  *
  * @module config/environmentConfig
@@ -49,7 +46,8 @@ export interface EnvironmentConfig {
   libraries: LibraryRequirement[];
 }
 
-export const CONFIG_FILE_NAME = "arduino-bridge.config.json";
+export const CONFIG_FILE_NAME = "arduino-requirements.txt";
+const LEGACY_CONFIG_FILE_NAME = "arduino-bridge.config.json";
 
 const DEFAULT_CONFIG: EnvironmentConfig = {
   version: 1,
@@ -61,9 +59,24 @@ const DEFAULT_CONFIG: EnvironmentConfig = {
  * Ensure the config file exists and return its normalized contents
  */
 export async function ensureEnvironmentConfig(
-  workspaceRoot: string
+  workspaceRoot: string,
 ): Promise<EnvironmentConfig> {
   const configPath = getConfigPath(workspaceRoot);
+  const legacyPath = path.join(workspaceRoot, LEGACY_CONFIG_FILE_NAME);
+
+  // Check for legacy JSON config first: read it, write the new format,
+  // delete the old file (one-time migration).
+  try {
+    await fs.promises.access(legacyPath, fs.constants.F_OK);
+    const raw = await fs.promises.readFile(legacyPath, "utf8");
+    const parsed = JSON.parse(raw);
+    const config = normalizeConfig(parsed, legacyPath);
+    await writeConfigFile(configPath, config);
+    await fs.promises.unlink(legacyPath);
+    return config;
+  } catch {
+    // No legacy file
+  }
 
   try {
     await fs.promises.access(configPath, fs.constants.F_OK);
@@ -79,14 +92,13 @@ export async function ensureEnvironmentConfig(
  * Read and normalize the configuration file
  */
 export async function readEnvironmentConfig(
-  workspaceRoot: string
+  workspaceRoot: string,
 ): Promise<EnvironmentConfig> {
   const configPath = getConfigPath(workspaceRoot);
 
   try {
     const raw = await fs.promises.readFile(configPath, "utf8");
-    const parsed = JSON.parse(raw);
-    return normalizeConfig(parsed, configPath);
+    return parseRequirementsTxt(raw);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`Failed to read ${CONFIG_FILE_NAME}: ${message}`);
@@ -94,11 +106,53 @@ export async function readEnvironmentConfig(
 }
 
 /**
+ * Parse the plain-text requirements format:
+ *   platform <id> [version]
+ *   library <name|"quoted name"> [version]
+ * Blank lines and #-comments are ignored.
+ */
+function parseRequirementsTxt(content: string): EnvironmentConfig {
+  const platforms: PlatformRequirement[] = [];
+  const libraries: LibraryRequirement[] = [];
+  const lines = content.split(/\r?\n/);
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+    if (trimmed.startsWith("platform ")) {
+      const parts = trimmed.substring(9).trim().split(/\s+/);
+      if (parts.length > 0) {
+        platforms.push({ id: parts[0], version: parts[1] || null });
+      }
+    } else if (trimmed.startsWith("library ")) {
+      const rest = trimmed.substring(8).trim();
+      // Name may be quoted (library names can contain spaces)
+      const match = rest.match(/^(?:"([^"]+)"|([^\s]+))(?:\s+(.+))?$/);
+      if (match) {
+        const name = match[1] || match[2];
+        const version = match[3] || null;
+        if (name) {
+          libraries.push({ name, version });
+        }
+      }
+    }
+  }
+
+  return {
+    version: 1,
+    platforms: sortPlatforms(platforms),
+    libraries: sortLibraries(libraries),
+  };
+}
+
+/**
  * Write the config file with sorted content for merge friendliness
  */
 export async function writeEnvironmentConfig(
   workspaceRoot: string,
-  config: EnvironmentConfig
+  config: EnvironmentConfig,
 ): Promise<void> {
   const configPath = getConfigPath(workspaceRoot);
   await writeConfigFile(configPath, config);
@@ -116,7 +170,7 @@ function normalizeConfig(config: any, _configPath: string): EnvironmentConfig {
         .map((p: unknown) => normalizePlatform(p))
         .filter(
           (item: PlatformRequirement | null): item is PlatformRequirement =>
-            Boolean(item)
+            Boolean(item),
         )
     : [];
 
@@ -124,7 +178,7 @@ function normalizeConfig(config: any, _configPath: string): EnvironmentConfig {
     ? config.libraries
         .map((l: unknown) => normalizeLibrary(l))
         .filter((item: LibraryRequirement | null): item is LibraryRequirement =>
-          Boolean(item)
+          Boolean(item),
         )
     : [];
 
@@ -185,7 +239,7 @@ function normalizeLibrary(input: any): LibraryRequirement | null {
 }
 
 function sortPlatforms(
-  platforms: PlatformRequirement[]
+  platforms: PlatformRequirement[],
 ): PlatformRequirement[] {
   return [...platforms].sort((a, b) => a.id.localeCompare(b.id));
 }
@@ -195,24 +249,31 @@ function sortLibraries(libraries: LibraryRequirement[]): LibraryRequirement[] {
 }
 
 function serializeConfig(config: EnvironmentConfig): string {
-  const payload = {
-    version: config.version,
-    platforms: config.platforms.map((item) =>
-      item.version ? { id: item.id, version: item.version } : { id: item.id }
-    ),
-    libraries: config.libraries.map((item) =>
-      item.version
-        ? { name: item.name, version: item.version }
-        : { name: item.name }
-    ),
-  };
+  let output =
+    "# Arduino Bridge Configuration\n# This file is automatically generated. Edits are preserved.\n\n";
 
-  return JSON.stringify(payload, null, 2) + "\n";
+  if (config.platforms.length > 0) {
+    output += "# Platforms\n";
+    for (const p of config.platforms) {
+      output += `platform ${p.id}${p.version ? " " + p.version : ""}\n`;
+    }
+    output += "\n";
+  }
+
+  if (config.libraries.length > 0) {
+    output += "# Libraries\n";
+    for (const l of config.libraries) {
+      const name = l.name.includes(" ") ? `"${l.name}"` : l.name;
+      output += `library ${name}${l.version ? " " + l.version : ""}\n`;
+    }
+  }
+
+  return output;
 }
 
 async function writeConfigFile(
   configPath: string,
-  config: EnvironmentConfig
+  config: EnvironmentConfig,
 ): Promise<void> {
   // Use a lock to prevent concurrent writes that can corrupt the file
   const previousLock = writeLock;

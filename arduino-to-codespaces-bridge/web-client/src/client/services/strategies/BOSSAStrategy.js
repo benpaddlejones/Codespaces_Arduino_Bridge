@@ -36,9 +36,9 @@ import { BossaProtocol } from "../protocols/Bossa.js";
 import {
   BOSSA_RENESAS_CONFIG,
   getProtocolConfig,
-  getChunkSize,
 } from "../../config/boardProtocols.js";
 import { UploadLogger } from "../utils/UploadLogger.js";
+import { isIntelHex, parseIntelHex } from "../utils/intelHex.js";
 
 // =============================================================================
 // BOSSAStrategy Class
@@ -63,13 +63,29 @@ export class BOSSAStrategy {
     /** @type {Object} Protocol configuration */
     this.config = BOSSA_RENESAS_CONFIG;
 
-    // Serial configuration from config
-    this.PRIMARY_BAUD = this.config.serial.baudUpload; // 230400
-    this.TOUCH_BAUD = this.config.serial.baudTouch; // 1200
+    /** @type {Object} Board-specific config selected in prepare() */
+    this.activeConfig = this.config;
+    this.setActiveConfig(this.config);
+  }
 
-    // Fallback baud rates if primary doesn't work
-    this.ALL_BAUD_RATES = [
+  /**
+   * Select the board-specific protocol configuration. Derives the baud
+   * plan (primary/touch/fallback rates) from the active config so nRF52
+   * boards probe their own rates before the generic scan.
+   * @param {Object} config - Board protocol configuration
+   */
+  setActiveConfig(config) {
+    this.activeConfig = config || this.config;
+    const serial = this.activeConfig.serial || {};
+    const defaults = this.config.serial || {};
+    this.PRIMARY_BAUD = serial.baudUpload || defaults.baudUpload;
+    this.TOUCH_BAUD = serial.baudTouch || defaults.baudTouch;
+
+    const fallback = serial.baudFallback;
+    const rates = [
       this.PRIMARY_BAUD,
+      fallback,
+      230400,
       115200,
       921600,
       460800,
@@ -78,6 +94,7 @@ export class BOSSAStrategy {
       19200,
       9600,
     ];
+    this.ALL_BAUD_RATES = [...new Set(rates.filter(Boolean))];
   }
 
   /**
@@ -113,32 +130,152 @@ export class BOSSAStrategy {
   }
 
   /**
+   * Set control signals, tolerating the errors that occur when the device
+   * resets mid-call (expected during the 1200 baud touch).
+   */
+  async setSignalsSafe(port, signals) {
+    try {
+      await port.setSignals(signals);
+    } catch (e) {
+      const message = e?.message || "Unknown error";
+      const expected =
+        message.includes("Failed to set control signals") ||
+        message.includes("device has been lost");
+      const label = JSON.stringify(signals);
+      if (expected) {
+        this.log.info(
+          `setSignals info (${label}): ${message} (likely reset in progress)`,
+        );
+      } else {
+        this.log.warn(`setSignals warning (${label}): ${message}`);
+      }
+    }
+  }
+
+  /**
+   * Detect manual bootloader entry (double-tap) without resetting the
+   * device: probe with N# and look for the bootloader's CR/LF-only ACK.
+   * Seeing user-sketch output instead means a 1200 touch is required.
+   * @returns {Promise<boolean>} True when the bootloader answered
+   */
+  async probeBootloaderWithoutReset(port) {
+    const rates = [this.PRIMARY_BAUD, this.activeConfig?.serial?.baudFallback]
+      .filter(Boolean)
+      .filter((rate, index, all) => all.indexOf(rate) === index);
+    if (rates.length === 0) return false;
+
+    let sawSketchOutput = false;
+    for (const baudRate of rates) {
+      let reader = null;
+      let writer = null;
+      let detected = false;
+      try {
+        await this.safeClose(port);
+        await port.open({ baudRate });
+        await port.setSignals({ dataTerminalReady: true, requestToSend: true });
+        reader = port.readable?.getReader?.();
+        writer = port.writable?.getWriter?.();
+        if (!reader || !writer) continue;
+
+        const encoder = new TextEncoder();
+        await writer.write(encoder.encode("N#"));
+
+        const collected = [];
+        const windowMs = 250;
+        const start = Date.now();
+        while (Date.now() - start < windowMs) {
+          const remaining = Math.max(0, windowMs - (Date.now() - start));
+          const waitMs = Math.min(remaining, 40);
+          const timeout = new Promise((resolve) =>
+            setTimeout(() => resolve("timeout"), waitMs),
+          );
+          const result = await Promise.race([reader.read(), timeout]);
+          if (result === "timeout") continue;
+          const { value, done } = result;
+          if (done) break;
+          if (value && value.length) {
+            collected.push(...value);
+            const bytes = new Uint8Array(collected);
+            // Bootloader N# ACK is just CR/LF bytes
+            if (
+              bytes.length > 0 &&
+              bytes.length <= 4 &&
+              bytes.every((b) => b === 10 || b === 13)
+            ) {
+              detected = true;
+              this.log.success(
+                `Device already responding to bootloader commands at ${baudRate} baud`,
+              );
+              break;
+            }
+            if (collected.length > 4 && !sawSketchOutput) {
+              sawSketchOutput = true;
+              this.log.info(
+                "Manual bootloader probe saw user sketch output; will perform 1200 baud touch",
+              );
+              break;
+            }
+          }
+        }
+      } catch {
+        /* probe is best-effort */
+      } finally {
+        if (reader) {
+          try {
+            await reader.cancel();
+          } catch {
+            /* ignore */
+          }
+          reader.releaseLock();
+        }
+        if (writer) {
+          try {
+            writer.releaseLock();
+          } catch {
+            /* ignore */
+          }
+        }
+        await this.safeClose(port);
+      }
+      if (detected) return true;
+    }
+    return false;
+  }
+
+  /**
    * Perform the 1200 baud touch sequence to enter bootloader mode
    *
-   * From USB capture (R4.pcapng):
+   * From USB captures (R4.pcapng, NANO_Sense_BLE.pcapng):
    *   Frame 2589: SET_LINE_CODING = 1200
    *   Frame 2593: SET_CONTROL_LINE_STATE = DTR=1, RTS=1
    *   Frame 2595: SET_LINE_CODING = 1200 (again!)
    *   Frame 2601: SET_CONTROL_LINE_STATE = DTR=0, RTS=1
-   *   (wait ~500ms)
+   *   (hold DTR LOW with the port open - critical for nRF52 - then release)
+   * @param {SerialPort} port - Serial port
+   * @param {number} [resetDelayMs=500] - Board-specific reset delay budget
    */
-  async perform1200Touch(port) {
+  async perform1200Touch(port, resetDelayMs = 500) {
     this.log.section("1200 BAUD TOUCH SEQUENCE");
-    this.log.info("Matching exact USB capture sequence (R4.pcapng)");
+    this.log.info(
+      "Matching exact USB capture sequence (NANO_Sense_BLE.pcapng)",
+    );
 
     await this.safeClose(port);
 
     // Step 1: First SET_LINE_CODING at 1200 baud
     this.log.serialConfig(
       this.TOUCH_BAUD,
-      "First SET_LINE_CODING - open at 1200 baud"
+      "First SET_LINE_CODING - open at 1200 baud",
     );
     await port.open({ baudRate: this.TOUCH_BAUD });
 
     // Step 2: SET_CONTROL_LINE_STATE = DTR=1, RTS=1 (0x0003)
     this.log.signal("DTR", true, "SET_CONTROL_LINE_STATE = 0x0003");
     this.log.signal("RTS", true, "Both control lines HIGH");
-    await port.setSignals({ dataTerminalReady: true, requestToSend: true });
+    await this.setSignalsSafe(port, {
+      dataTerminalReady: true,
+      requestToSend: true,
+    });
 
     // Step 3: Second SET_LINE_CODING at 1200 (close and reopen to force)
     this.log.info("Forcing second SET_LINE_CODING by close/reopen");
@@ -147,21 +284,96 @@ export class BOSSAStrategy {
     await port.open({ baudRate: this.TOUCH_BAUD });
 
     // Step 4: SET_CONTROL_LINE_STATE = DTR=0, RTS=1 (0x0002) - triggers reset
-    this.log.signal("DTR", false, "DTR LOW triggers reset on R4 boards");
+    this.log.signal("DTR", false, "DTR LOW triggers reset");
     this.log.signal("RTS", true, "RTS stays HIGH");
-    await port.setSignals({ dataTerminalReady: false, requestToSend: true });
+    await this.setSignalsSafe(port, {
+      dataTerminalReady: false,
+      requestToSend: true,
+    });
 
-    // Close port
+    // Hold DTR LOW with the port still open (critical for nRF52 boards)
+    const holdMs = Math.min(resetDelayMs, 550);
+    this.log.wait(holdMs, "Hold DTR LOW with port open (critical for nRF52)");
+    await new Promise((r) => setTimeout(r, holdMs));
+
+    // Release both control lines before closing
+    this.log.signal("DTR", false, "Both control lines LOW (release)");
+    this.log.signal("RTS", false, "Release complete");
+    await this.setSignalsSafe(port, {
+      dataTerminalReady: false,
+      requestToSend: false,
+    });
+
     this.log.info("Closing port after touch sequence");
     await port.close();
 
-    // Wait ~500ms for device reset (matching USB capture timing)
-    this.log.wait(500, "Wait for RA4M1 to reset and enter SAM-BA bootloader");
-    await new Promise((r) => setTimeout(r, 500));
+    // Wait out the remainder of the reset budget
+    const settleMs = Math.max(resetDelayMs - holdMs, 500);
+    this.log.wait(
+      settleMs,
+      "Wait for device to reset and enter SAM-BA bootloader",
+    );
+    await new Promise((r) => setTimeout(r, settleMs));
 
     this.log.success(
-      "1200 baud touch complete - device should be in bootloader mode"
+      "1200 baud touch complete - device should be in bootloader mode",
     );
+  }
+
+  /**
+   * After the 1200 touch some boards re-enumerate as a different
+   * SerialPort. Watch the granted ports for one matching the bootloader
+   * PID (or any PID change) and hand it back for flashing.
+   * @returns {Promise<SerialPort>} The bootloader port (or the original)
+   */
+  async waitForBootloaderPort(
+    port,
+    { vid, originalPid, bootloaderPids = [], timeoutMs = 5000 },
+  ) {
+    if (!navigator?.serial?.getPorts) {
+      this.log.warn(
+        "navigator.serial.getPorts unavailable - continuing with existing port",
+      );
+      return port;
+    }
+
+    const deadline = Date.now() + timeoutMs;
+    const pollMs = 250;
+    let announced = false;
+
+    while (Date.now() < deadline) {
+      const candidate = (await navigator.serial.getPorts()).find((p) => {
+        const info = p.getInfo();
+        if (vid && info.usbVendorId && info.usbVendorId !== vid) return false;
+        if (bootloaderPids.length > 0 && info.usbProductId) {
+          return bootloaderPids.includes(info.usbProductId);
+        }
+        if (info.usbProductId && originalPid) {
+          return info.usbProductId !== originalPid;
+        }
+        return false;
+      });
+
+      if (candidate) {
+        if (candidate !== port) {
+          this.log.success(
+            "Detected bootloader port via Web Serial enumeration",
+          );
+          await this.safeClose(candidate);
+          return candidate;
+        }
+        return port;
+      }
+
+      if (!announced) {
+        this.log.info("Waiting for bootloader port to appear...");
+        announced = true;
+      }
+      await new Promise((r) => setTimeout(r, pollMs));
+    }
+
+    this.log.warn("Bootloader port not detected automatically before timeout");
+    return port;
   }
 
   /**
@@ -185,7 +397,7 @@ export class BOSSAStrategy {
       // Send N# to trigger response
       this.log.command(
         "N#",
-        "Query bootloader - expects ASCII response if correct baud rate"
+        "Query bootloader - expects ASCII response if correct baud rate",
       );
       await bossa.writeCommand("N#");
 
@@ -198,7 +410,7 @@ export class BOSSAStrategy {
         const waitTime = Math.min(remaining, 30);
 
         const timeoutPromise = new Promise((resolve) =>
-          setTimeout(() => resolve({ timeout: true }), waitTime)
+          setTimeout(() => resolve({ timeout: true }), waitTime),
         );
 
         const readResult = await Promise.race([
@@ -210,7 +422,7 @@ export class BOSSAStrategy {
           // Check if we have enough data to decide
           if (collected.length >= 3) {
             const isAscii = this.isValidAsciiResponse(
-              new Uint8Array(collected)
+              new Uint8Array(collected),
             );
             if (isAscii) {
               this.log.success(`ASCII data detected at ${baudRate} baud!`);
@@ -237,7 +449,7 @@ export class BOSSAStrategy {
           this.log.rx(
             `Probe response (${value.length} bytes)`,
             value,
-            `Testing if data is valid ASCII at ${baudRate} baud`
+            `Testing if data is valid ASCII at ${baudRate} baud`,
           );
 
           collected.push(...value);
@@ -245,12 +457,12 @@ export class BOSSAStrategy {
           // As soon as we have enough bytes, check if ASCII
           if (collected.length >= 2) {
             const isAscii = this.isValidAsciiResponse(
-              new Uint8Array(collected)
+              new Uint8Array(collected),
             );
             if (isAscii) {
               // ASCII! This is the right baud rate - return immediately
               this.log.success(
-                `ASCII data confirmed at ${baudRate} baud (${collected.length} bytes)`
+                `ASCII data confirmed at ${baudRate} baud (${collected.length} bytes)`,
               );
               return {
                 result: "ascii",
@@ -260,7 +472,7 @@ export class BOSSAStrategy {
             } else if (collected.length >= 4) {
               // Got enough garbage data - wrong baud rate, exit early
               this.log.warn(
-                `Garbage data at ${baudRate} - wrong baud rate (${collected.length} bytes)`
+                `Garbage data at ${baudRate} - wrong baud rate (${collected.length} bytes)`,
               );
               await bossa.disconnect();
               await this.safeClose(port);
@@ -312,7 +524,7 @@ export class BOSSAStrategy {
 
       while (Date.now() - startTime < 1000) {
         const timeoutPromise = new Promise((resolve) =>
-          setTimeout(() => resolve({ timeout: true }), 50)
+          setTimeout(() => resolve({ timeout: true }), 50),
         );
         const result = await Promise.race([
           bossa.reader.read(),
@@ -398,7 +610,7 @@ export class BOSSAStrategy {
     if (primaryResult.result === "timeout") {
       // No response at all - device probably not in bootloader mode
       this.log.warn(
-        "No response at primary baud - device may need manual reset"
+        "No response at primary baud - device may need manual reset",
       );
       return { success: false, needsManualReset: true, reason: "no_response" };
     }
@@ -443,7 +655,7 @@ export class BOSSAStrategy {
         const waitTime = Math.min(remaining, 50);
 
         const timeoutPromise = new Promise((resolve) =>
-          setTimeout(() => resolve({ timeout: true }), waitTime)
+          setTimeout(() => resolve({ timeout: true }), waitTime),
         );
 
         const result = await Promise.race([reader.read(), timeoutPromise]);
@@ -500,29 +712,82 @@ export class BOSSAStrategy {
     const info = port.getInfo();
     const pid = info.usbProductId;
     const vid = info.usbVendorId;
+
+    // Select the board-specific configuration (baud plan, PIDs, timing)
+    const boardConfig = getProtocolConfig(fqbn) || this.config;
+    this.setActiveConfig(boardConfig);
+    const bootloaderPids =
+      boardConfig.bootloaderPids || this.config.bootloaderPids || [];
+    const resetDelayMs =
+      boardConfig.timing?.resetDelayMs || this.config.timing?.resetDelayMs;
+
     this.log.device(vid, pid, "Checking if device is in bootloader mode");
 
     // Check if already in bootloader mode (different PID)
-    const BOOTLOADER_PIDS = [0x006d, 0x0054, 0x0057, 0x0069];
-    if (pid && BOOTLOADER_PIDS.includes(pid)) {
+    if (pid && bootloaderPids.includes(pid)) {
       this.log.success("Device already in bootloader mode (detected by PID)");
       this.log.info(
-        `Bootloader PID: 0x${pid.toString(16)} is a known bootloader PID`
+        `Bootloader PID: 0x${pid.toString(16)} is a known bootloader PID`,
       );
-      return;
+      return port;
+    }
+
+    // nRF52 boards keep the same PID in bootloader mode - probe for a
+    // manual (double-tap) entry before disturbing the device
+    if (
+      bootloaderPids.length === 0 &&
+      this.activeConfig?.variant === "nrf52" &&
+      (await this.probeBootloaderWithoutReset(port))
+    ) {
+      this.log.info(
+        "Skipping 1200 baud touch - manual bootloader entry detected",
+      );
+      return port;
     }
 
     this.log.info("Device not in bootloader mode - performing 1200 baud touch");
-    // Try the 1200 baud touch
-    await this.perform1200Touch(port);
+    await this.perform1200Touch(port, resetDelayMs || 500);
+
+    // The device may re-enumerate as a new port in bootloader mode
+    return await this.waitForBootloaderPort(port, {
+      vid,
+      originalPid: pid,
+      bootloaderPids,
+      timeoutMs: resetDelayMs || 2500,
+    });
   }
 
   async flash(port, data, progressCallback, fqbn) {
     this.log.section(
-      "FLASH: Uploading Firmware to R4 WiFi via SAM-BA Protocol"
+      "FLASH: Uploading Firmware to R4 WiFi via SAM-BA Protocol",
     );
     this.log.info(`Firmware size: ${UploadLogger.formatSize(data.byteLength)}`);
     this.log.info(`Board FQBN: ${fqbn || "unknown"}`);
+
+    // Some cores emit Intel HEX (e.g. nRF52); bootloaders expect binary.
+    const rawBytes = new Uint8Array(data);
+    let firmwareBinary;
+    let hexStartAddress = null;
+    if (isIntelHex(rawBytes)) {
+      this.log.info("Detected Intel HEX format - converting to binary...");
+      try {
+        const parsed = parseIntelHex(rawBytes);
+        firmwareBinary = parsed.data;
+        hexStartAddress = parsed.startAddress;
+        this.log.info(
+          `Converted to binary: ${UploadLogger.formatSize(firmwareBinary.byteLength)}`,
+        );
+        this.log.info(
+          `Start address from HEX: 0x${parsed.startAddress.toString(16)}`,
+        );
+      } catch (e) {
+        this.log.error("Failed to parse Intel HEX", e);
+        throw new Error(`Failed to parse Intel HEX: ${e.message}`);
+      }
+    } else {
+      this.log.info("Data is already binary format");
+      firmwareBinary = rawBytes;
+    }
 
     let bossa = null;
     let workingBaud = null;
@@ -537,7 +802,7 @@ export class BOSSAStrategy {
       // USB capture shows SET_LINE_CODING sent twice at 230400
       this.log.serialConfig(
         this.PRIMARY_BAUD,
-        "Opening at primary baud (first SET_LINE_CODING)"
+        "Opening at primary baud (first SET_LINE_CODING)",
       );
       await port.open({ baudRate: this.PRIMARY_BAUD });
       await port.setSignals({ dataTerminalReady: true, requestToSend: true });
@@ -559,7 +824,7 @@ export class BOSSAStrategy {
       // Send N# to verify bootloader is responding
       this.log.command(
         "N#",
-        "Verify bootloader is responding (chip info query)"
+        "Verify bootloader is responding (chip info query)",
       );
       await bossa.writeCommand("N#");
 
@@ -629,7 +894,7 @@ export class BOSSAStrategy {
       if (progressCallback) {
         progressCallback(
           0,
-          "⚠️ Double-tap RESET button on Arduino, then click OK"
+          "⚠️ Double-tap RESET button on Arduino, then click OK",
         );
       }
 
@@ -661,7 +926,7 @@ export class BOSSAStrategy {
         if (response.gotData && this.isValidAsciiResponse(response.bytes)) {
           workingBaud = this.PRIMARY_BAUD;
           this.log.success(
-            `Connected after manual reset at ${workingBaud} baud`
+            `Connected after manual reset at ${workingBaud} baud`,
           );
         }
       } catch (e) {
@@ -677,7 +942,7 @@ export class BOSSAStrategy {
           "1. Double-tap RESET quickly (LED should pulse/fade)\n" +
           "2. Click Upload within 8 seconds\n" +
           "3. The board is properly connected via USB\n\n" +
-          "If the LED never pulses, try tapping RESET faster."
+          "If the LED never pulses, try tapping RESET faster.",
       );
     }
 
@@ -693,89 +958,130 @@ export class BOSSAStrategy {
       }
       bossa.reader = port.readable.getReader();
 
-      // Determine flash offset and SRAM buffer addresses for R4
-      let offset = 0x2000; // Default for SAMD
-      let sramBufferA = 0x20001000; // SRAM buffer A address
-      let sramBufferB = 0x20001100; // SRAM buffer B address (for double-buffering)
+      // Variant-driven flash memory layout (from the board protocol config):
+      //
+      // renesas-ra4m1 (R4 WiFi) - from Wireshark capture + bootloader source
+      //   (arduino-renesas-bootloader/src/bossa.c):
+      //   - S command: writes to internal data_buffer[8192], addr is OFFSET
+      //     into the buffer
+      //   - Y command: copies from data_buffer to flash at
+      //     SKETCH_FLASH_OFFSET + addr (SKETCH_FLASH_OFFSET = 0x4000)
+      //   - flash write is blocking; ACK "Y\n\r" arrives after commit
+      //
+      // nrf52 (Nano 33 BLE) - SAM-BA Extended with the same flash applet
+      //   as the R4, but flash writes target the HEX start address (or the
+      //   configured sketch offset) with 4KB pages.
+      //
+      // direct-write (useDirectFlashWrite) - standard BOSSA: S# writes go
+      //   straight to flash, no Y# copy commands.
+      //
+      // default (SAMD21) - flash write at the configured sketch offset.
+      const protocolConfig = getProtocolConfig(fqbn) || this.config;
+      const variant = protocolConfig.variant || "default";
+      const useDirectWrite = protocolConfig.useDirectFlashWrite || false;
 
-      // Flash offset configuration for R4 WiFi
-      // User code starts at 0x4000 (bootloader occupies 0x0000-0x3FFF)
-      let flashWriteOffset = offset; // Where to write firmware
-      let goOffset = offset; // Where to jump for execution
+      let flashWriteOffset = protocolConfig.memory?.sketchOffset || 0x2000;
+      let goOffset = flashWriteOffset;
+      let sramBuffer = 0x34;
 
-      if (fqbn && fqbn.includes("renesas_uno")) {
-        // R4 WiFi: Protocol discovered from Wireshark USB capture + bootloader source code
-        //
-        // From arduino-renesas-bootloader/src/bossa.c:
-        // =============================================
-        // - S command: writes to internal data_buffer[8192], addr is OFFSET into buffer
-        // - Y command: copies from data_buffer to flash at SKETCH_FLASH_OFFSET + addr
-        // - SKETCH_FLASH_OFFSET = 0x4000 (16KB) for non-DFU boards
-        // - Flash write is blocking (interrupts disabled during R_FLASH_LP_Write)
-        // - ACK "Y\n\r" sent AFTER flash write completes
-        //
-        // Protocol sequence from Wireshark capture:
-        //   S00000034,00001000# (write 0x1000 bytes to data_buffer[0x34])
-        //   Y00000034,0#        (set copyOffset = 0x34)  -> Y\n\r ACK
-        //   Y00000000,00001000# (write to flash 0x4000)  -> Y\n\r ACK
-        //   ...repeat for each 0x1000 chunk at 0x1000, 0x2000, 0x3000...
-        //   G00004000#          (jump to user code at 0x4000)
-        //
-        // NOTE: Y command address 0x0000 writes to physical flash 0x4000 (bootloader adds offset)
-        //
+      if (variant === "renesas-ra4m1") {
         flashWriteOffset = 0x0000; // Y command offset (bootloader adds 0x4000)
-        goOffset = 0x4000; // User code entry point (G command uses absolute address)
-
-        // SRAM buffer offset at 0x34 - offset into bootloader's data_buffer[8192]
-        sramBufferA = 0x34;
-        sramBufferB = 0x34; // Same buffer, no double-buffering
+        goOffset = 0x4000; // User code entry point (absolute address)
+        sramBuffer = 0x34; // Offset into bootloader's data_buffer[8192]
+        this.log.info("Flash memory layout (Renesas RA4M1):");
+        this.log.memory(
+          "FLASH_WRITE",
+          flashWriteOffset,
+          0,
+          `Y command offset (bootloader adds 0x4000 internally → physical 0x${(
+            flashWriteOffset + 0x4000
+          ).toString(16)})`,
+        );
+        this.log.info(
+          `Execution entry point: ${UploadLogger.formatAddr(
+            goOffset,
+          )} (G command uses absolute address)`,
+        );
+        this.log.info(
+          `Data buffer offset: ${UploadLogger.formatAddr(
+            sramBuffer,
+          )} (into bootloader's data_buffer[8192])`,
+        );
+      } else if (variant === "nrf52") {
+        flashWriteOffset =
+          typeof hexStartAddress === "number"
+            ? hexStartAddress
+            : protocolConfig.memory?.sketchOffset || 0x10000;
+        goOffset = flashWriteOffset;
+        this.log.info(`Flash memory layout (${variant}):`);
+        this.log.memory(
+          "FLASH_WRITE",
+          0x34,
+          0,
+          `Buffer-based writes to 0x34, applet copies to flash @ 0x${flashWriteOffset.toString(16)}`,
+        );
+        this.log.info(
+          `Flash size: ${(protocolConfig.memory?.flashSize || 0) / 1024}KB`,
+        );
+        if (typeof hexStartAddress === "number") {
+          this.log.info(
+            `Firmware start address: 0x${hexStartAddress.toString(16)}`,
+          );
+        }
+        this.log.info(
+          "Protocol: SAM-BA Extended with flash applet (same as R4)",
+        );
+      } else if (useDirectWrite) {
+        flashWriteOffset =
+          typeof hexStartAddress === "number"
+            ? hexStartAddress
+            : protocolConfig.memory?.sketchOffset || 0x10000;
+        goOffset = flashWriteOffset;
+        this.log.info("Flash memory layout (direct write):");
+        this.log.memory(
+          "FLASH_WRITE",
+          flashWriteOffset,
+          0,
+          `Direct flash write at offset 0x${flashWriteOffset.toString(16)}`,
+        );
+        this.log.info(
+          "Protocol: Standard BOSSA (direct S# writes, no Y# commands)",
+        );
+      } else {
+        this.log.info(`Flash memory layout (${variant || "SAMD"}):`);
+        this.log.memory(
+          "FLASH_WRITE",
+          flashWriteOffset,
+          0,
+          `Flash write offset 0x${flashWriteOffset.toString(16)}`,
+        );
       }
 
-      this.log.info("Flash memory layout (Renesas RA4M1):");
-      this.log.memory(
-        "FLASH_WRITE",
-        flashWriteOffset,
-        0,
-        `Y command offset (bootloader adds 0x4000 internally → physical 0x${(
-          flashWriteOffset + 0x4000
-        ).toString(16)})`
-      );
-      this.log.info(
-        `Execution entry point: ${UploadLogger.formatAddr(
-          goOffset
-        )} (G command uses absolute address)`
-      );
-      this.log.info(
-        `Data buffer offset: ${UploadLogger.formatAddr(
-          sramBufferA
-        )} (into bootloader's data_buffer[8192])`
-      );
-
       // Get chunk size from config (used for both padding and writing)
-      const protocolConfig = getProtocolConfig(fqbn) || this.config;
       const chunkSize =
         protocolConfig.memory?.chunkSize || this.config.memory.chunkSize;
 
       // Pad firmware to chunk size boundary to ensure complete flash pages
       // The bootloader may have issues with partial page writes
-      const originalSize = data.byteLength;
+      const originalSize = firmwareBinary.byteLength;
       const paddedSize = Math.ceil(originalSize / chunkSize) * chunkSize;
       const firmware = new Uint8Array(paddedSize);
-      firmware.set(new Uint8Array(data), 0);
+      firmware.set(firmwareBinary, 0);
       // Fill padding with 0xFF (erased flash state)
       firmware.fill(0xff, originalSize);
       const totalBytes = firmware.length;
       this.log.info(
-        `Firmware: ${originalSize} bytes → padded to ${totalBytes} bytes (${chunkSize}-byte boundary)`
+        `Firmware: ${originalSize} bytes → padded to ${totalBytes} bytes (${chunkSize}-byte boundary)`,
       );
 
       // Step 1: Upload flash applet (matches Arduino IDE protocol from Wireshark)
       // The IDE uploads a 52-byte applet to data_buffer[0] before writing firmware
-      // This applet is ARM Thumb code used for flash operations
-      if (fqbn && fqbn.includes("renesas_uno")) {
+      // This applet is ARM Thumb code used for flash operations.
+      // Used by both the R4 (renesas-ra4m1) and Nano 33 BLE (nrf52) variants.
+      if (variant === "renesas-ra4m1" || variant === "nrf52") {
         this.log.section("FLASH APPLET UPLOAD");
         this.log.info(
-          "Uploading 52-byte ARM Thumb flash applet to data_buffer[0]"
+          "Uploading 52-byte ARM Thumb flash applet to data_buffer[0]",
         );
         this.log.info("This applet assists with flash write operations");
         if (progressCallback) progressCallback(10, "Uploading flash applet...");
@@ -834,154 +1140,248 @@ export class BOSSAStrategy {
           0x00,
           0x00,
           0x00,
-          0x00, // 52 bytes (0x34) total
+          0x00, // 52 bytes total
         ]);
         this.log.command(
           "S00000000,00000034#",
-          "Write 52 bytes to data_buffer[0x00] (flash applet)"
+          "Write 52 bytes to data_buffer[0x00] (flash applet)",
         );
         await bossa.writeBinary(0x00, FLASH_APPLET);
         this.log.success("Flash applet uploaded");
 
         // W# register commands from Arduino IDE (flash configuration)
-        // W00000030,00000400# and W00000020,00000000#
         this.log.info("Configuring flash registers via W# commands");
         this.log.command(
           "W00000030,00000400#",
-          "Write 0x400 to register at 0x30 (flash config)"
+          "Write 0x400 to register at 0x30 (flash config)",
         );
         await bossa.writeWord(0x30, 0x400);
         this.log.command(
           "W00000020,00000000#",
-          "Write 0x00 to register at 0x20 (flash config)"
+          "Write 0x00 to register at 0x20 (flash config)",
         );
         await bossa.writeWord(0x20, 0x00);
         this.log.success("Flash registers configured");
       }
 
-      // Step 2: Erase flash (required for R4)
+      // Step 2: Erase flash
       this.log.section("FLASH ERASE");
       if (progressCallback) progressCallback(12, "Erasing flash...");
 
-      // Calculate number of pages to erase (R4 page size is 8192 bytes / 0x2000)
-      const erasePageSize = 0x2000; // 8KB pages for Renesas RA4M1
+      // Page size differs per family (nRF52: 4KB, Renesas: 8KB)
+      const erasePageSize = variant === "nrf52" ? 0x1000 : 0x2000;
+      const eraseAddr =
+        variant === "renesas-ra4m1" || variant === "nrf52"
+          ? 0
+          : flashWriteOffset;
       const pagesToErase = Math.ceil(totalBytes / erasePageSize);
       this.log.memory(
         "ERASE",
-        flashWriteOffset + 0x4000,
+        eraseAddr,
         totalBytes,
-        `Erase ${pagesToErase} pages (${erasePageSize} bytes per page)`
+        `Erase ${pagesToErase} pages (${erasePageSize} bytes per page)`,
       );
       this.log.command(
-        `X${flashWriteOffset.toString(16).padStart(8, "0")}#`,
-        "Chip erase command - erases flash from offset to end of firmware"
+        `X${eraseAddr.toString(16).padStart(8, "0")}#`,
+        "Chip erase command - erases flash from offset to end of firmware",
       );
 
       // Use the chipErase method which properly waits for X command ACK
-      // X command also has internal 0x4000 offset added by bootloader
-      await bossa.chipErase(flashWriteOffset);
+      await bossa.chipErase(eraseAddr);
       this.log.success("Flash erased successfully");
 
-      // Step 3: Write flash in chunks
+      // Step 3: Write flash in chunks (variant-specific write flow)
       this.log.section("FLASH WRITE");
-      //
-      // SAM-BA R4 WiFi protocol (from bootloader source + Wireshark capture):
-      // 1. S[buffer_offset],[size]# - Write data to bootloader's data_buffer[]
-      // 2. Y[buffer_offset],0# - Set copyOffset (where to copy FROM in data_buffer)
-      // 3. Y[flash_offset],[size]# - Write from data_buffer to flash
-      //    (bootloader adds SKETCH_FLASH_OFFSET internally: physical_addr = 0x4000 + flash_offset)
-      //
-      // Chunk size already determined above from config (MUST match Wireshark capture!)
-      // Renesas: 4096 bytes (0x1000) - verified in R4.pcapng
       const numChunks = Math.ceil(totalBytes / chunkSize);
       this.log.info(
-        `Writing ${totalBytes} bytes in ${numChunks} chunks of ${chunkSize} bytes`
+        `Writing ${totalBytes} bytes in ${numChunks} chunks of ${chunkSize} bytes`,
       );
-      this.log.info(`Protocol variant: ${protocolConfig.variant || "default"}`);
+      this.log.info(`Protocol variant: ${variant}`);
       if (progressCallback) progressCallback(15, "Writing flash...");
 
-      // flashAddr is the Y command flash offset (bootloader adds 0x4000)
-      let flashAddr = flashWriteOffset;
-      // sramBuffer is the offset into bootloader's data_buffer[8192]
-      const sramBuffer = sramBufferA;
+      if (variant === "renesas-ra4m1") {
+        // R4: S# into data_buffer, then Y#/Y# buffered copy to flash.
+        // The bootloader adds 0x4000 to the Y command flash offset.
+        let flashAddr = flashWriteOffset;
+        for (let i = 0; i < totalBytes; i += chunkSize) {
+          const chunkNum = Math.floor(i / chunkSize) + 1;
+          const chunk = firmware.subarray(
+            i,
+            Math.min(i + chunkSize, totalBytes),
+          );
+          const isLastChunk = i + chunkSize >= totalBytes;
 
-      for (let i = 0; i < totalBytes; i += chunkSize) {
-        const chunkNum = Math.floor(i / chunkSize) + 1;
-        const chunk = firmware.subarray(i, Math.min(i + chunkSize, totalBytes));
-        const isLastChunk = i + chunkSize >= totalBytes;
+          const sramHex = sramBuffer.toString(16).padStart(8, "0");
+          const chunkHex = chunk.length.toString(16).padStart(8, "0");
+          const flashHex = flashAddr.toString(16).padStart(8, "0");
+          const physicalHex = (flashAddr + 0x4000)
+            .toString(16)
+            .padStart(8, "0");
 
-        const sramHex = sramBuffer.toString(16).padStart(8, "0");
-        const chunkHex = chunk.length.toString(16).padStart(8, "0");
-        const flashHex = flashAddr.toString(16).padStart(8, "0");
-        const physicalHex = (flashAddr + 0x4000).toString(16).padStart(8, "0");
+          this.log.chunk(
+            chunkNum,
+            numChunks,
+            flashAddr + 0x4000,
+            chunk.length,
+            isLastChunk,
+          );
+          this.log.command(
+            `S${sramHex},${chunkHex}#`,
+            `Write ${chunk.length} bytes into bootloader data_buffer[0x${sramHex}]`,
+          );
+          await bossa.writeBinary(sramBuffer, chunk);
+          this.log.command(
+            `Y${sramHex},00000000#`,
+            "Set copy offset from data_buffer (bootloader uses this as source)",
+          );
+          this.log.command(
+            `Y${flashHex},${chunkHex}#`,
+            `Copy ${chunk.length} bytes from data_buffer to flash @ 0x${physicalHex}`,
+          );
+          await bossa.writeBuffer(sramBuffer, flashAddr, chunk.length);
+          flashAddr += chunk.length;
 
-        this.log.chunk(
-          chunkNum,
-          numChunks,
-          flashAddr + 0x4000,
-          chunk.length,
-          isLastChunk
-        );
-        this.log.command(
-          `S${sramHex},${chunkHex}#`,
-          `Write ${chunk.length} bytes into bootloader data_buffer[0x${sramHex}]`
-        );
+          const percent = 15 + Math.round((i / totalBytes) * 80);
+          if (progressCallback)
+            progressCallback(percent, `Chunk ${chunkNum}/${numChunks}`);
 
-        // Write to SRAM buffer, then commit to flash
-        await bossa.writeBinary(sramBuffer, chunk);
-        this.log.command(
-          `Y${sramHex},00000000#`,
-          "Set copy offset from data_buffer (bootloader uses this as source)"
-        );
-        this.log.command(
-          `Y${flashHex},${chunkHex}#`,
-          `Copy ${chunk.length} bytes from data_buffer to flash @ 0x${physicalHex}`
-        );
-        await bossa.writeBuffer(sramBuffer, flashAddr, chunk.length);
+          // Delay between chunks - Wireshark shows 238-261ms between 4KB
+          // chunks; allows the flash controller to commit each page
+          if (isLastChunk) {
+            this.log.wait(1000, "Final chunk - extended wait for flash commit");
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          } else {
+            this.log.wait(250, "Inter-chunk delay for flash page commit");
+            await new Promise((resolve) => setTimeout(resolve, 250));
+          }
+        }
+      } else if (variant === "nrf52") {
+        // Nano 33 BLE: buffered writes via SRAM buffer @ 0x34; the applet
+        // copies to flash at relative offsets from the firmware start.
+        let relativeAddr = 0;
+        for (let i = 0; i < totalBytes; i += chunkSize) {
+          const chunkNum = Math.floor(i / chunkSize) + 1;
+          const chunk = firmware.subarray(
+            i,
+            Math.min(i + chunkSize, totalBytes),
+          );
+          const isLastChunk = i + chunkSize >= totalBytes;
 
-        flashAddr += chunk.length;
+          const sramHex = "34".padStart(8, "0");
+          const chunkHex = chunk.length.toString(16).padStart(8, "0");
+          const relativeHex = relativeAddr.toString(16).padStart(8, "0");
+          const physicalAddr = flashWriteOffset + relativeAddr;
 
-        const percent = 15 + Math.round((i / totalBytes) * 80);
-        if (progressCallback)
-          progressCallback(percent, `Chunk ${chunkNum}/${numChunks}`);
+          this.log.chunk(
+            chunkNum,
+            numChunks,
+            physicalAddr,
+            chunk.length,
+            isLastChunk,
+          );
+          this.log.command(
+            `S${sramHex},${chunkHex}#`,
+            `Write ${chunk.length} bytes to SRAM buffer @ 0x${sramHex}`,
+          );
+          await bossa.writeBinary(0x34, chunk);
+          this.log.command(
+            `Y${sramHex},0#`,
+            "Set source pointer to buffer offset 0x34",
+          );
+          this.log.command(
+            `Y${relativeHex},${chunkHex}#`,
+            `Copy ${chunk.length} bytes to flash @ relative 0x${relativeHex} (real 0x${physicalAddr.toString(16)})`,
+          );
+          await bossa.writeBuffer(0x34, relativeAddr, chunk.length);
+          relativeAddr += chunk.length;
 
-        // Delay between chunks - CRITICAL: IDE takes ~250ms per chunk!
-        // Wireshark shows 238-261ms between 4KB chunks
-        // This allows flash controller to fully commit each page
-        if (isLastChunk) {
-          this.log.wait(1000, "Final chunk - extended wait for flash commit");
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        } else {
-          this.log.wait(250, "Inter-chunk delay for flash page commit");
-          await new Promise((resolve) => setTimeout(resolve, 250));
+          const percent = 15 + Math.round((i / totalBytes) * 80);
+          if (progressCallback)
+            progressCallback(percent, `Chunk ${chunkNum}/${numChunks}`);
+
+          if (isLastChunk) {
+            this.log.wait(500, "Final chunk - wait for flash commit");
+            await new Promise((resolve) => setTimeout(resolve, 500));
+          } else {
+            this.log.wait(100, "Inter-chunk delay for applet flash write");
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+        }
+      } else {
+        // Standard BOSSA / SAMD: direct S# writes straight to flash
+        let flashAddr = flashWriteOffset;
+        for (let i = 0; i < totalBytes; i += chunkSize) {
+          const chunkNum = Math.floor(i / chunkSize) + 1;
+          const chunk = firmware.subarray(
+            i,
+            Math.min(i + chunkSize, totalBytes),
+          );
+          const isLastChunk = i + chunkSize >= totalBytes;
+
+          const flashHex = flashAddr.toString(16).padStart(8, "0");
+          const chunkHex = chunk.length.toString(16).padStart(8, "0");
+
+          this.log.chunk(
+            chunkNum,
+            numChunks,
+            flashAddr,
+            chunk.length,
+            isLastChunk,
+          );
+          this.log.command(
+            `S${flashHex},${chunkHex}#`,
+            `Write ${chunk.length} bytes directly to flash @ 0x${flashHex}`,
+          );
+          await bossa.writeBinary(flashAddr, chunk);
+          flashAddr += chunk.length;
+
+          const percent = 15 + Math.round((i / totalBytes) * 80);
+          if (progressCallback)
+            progressCallback(percent, `Chunk ${chunkNum}/${numChunks}`);
+
+          if (isLastChunk) {
+            this.log.wait(500, "Final chunk - wait for flash commit");
+            await new Promise((resolve) => setTimeout(resolve, 500));
+          } else {
+            this.log.wait(50, "Inter-chunk delay");
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          }
         }
       }
 
-      // Wait for flash operations to fully complete before reset
-      // The Flash LP peripheral needs time to finish writing all pages
-      // CRITICAL: Larger sketches need more time for flash controller to commit all writes
-      // The Y# ACK only means data was received, not necessarily committed to flash
-      // Using a generous 10 second wait to ensure flash is fully committed
-      const waitTime = 10000;
+      // Wait for flash operations to fully complete before reset.
+      // Applet-based variants (R4/nRF52) need longer for the final commit;
+      // the Y# ACK only means data was received, not committed.
+      const waitTime =
+        variant === "renesas-ra4m1" || variant === "nrf52" ? 5000 : 2000;
       this.log.section("FLASH COMMIT");
       this.log.wait(
         waitTime,
-        `Final flash commit wait (${numChunks} chunks, ${totalBytes} bytes)`
+        `Final flash commit wait (${numChunks} chunks, ${totalBytes} bytes)`,
       );
-      this.log.info(
-        "Y# ACK only means data received - actual flash commit takes longer"
-      );
+      if (variant === "renesas-ra4m1" || variant === "nrf52") {
+        this.log.info(
+          "Applet-based write - waiting for flash commit to complete",
+        );
+      }
       await new Promise((resolve) => setTimeout(resolve, waitTime));
 
-      // Verify bootloader is still responsive by sending N# before reset
-      this.log.info("Verifying bootloader is still responsive...");
-      try {
-        await bossa.hello();
-        this.log.success("Bootloader still responsive after flash write");
-      } catch (e) {
-        this.log.warn(
-          "Bootloader unresponsive after write - proceeding with reset"
+      // Verify bootloader is still responsive by sending N# before reset.
+      // Skipped on nRF52 - its bootloader often resets immediately.
+      if (variant === "nrf52") {
+        this.log.info(
+          "Skipping post-flash handshake for nRF52 (bootloader often resets immediately)",
         );
+      } else {
+        this.log.info("Verifying bootloader is still responsive...");
+        try {
+          await bossa.hello();
+          this.log.success("Bootloader still responsive after flash write");
+        } catch (e) {
+          this.log.warn(
+            "Bootloader unresponsive after write - proceeding with reset",
+          );
+        }
       }
 
       if (progressCallback) progressCallback(96, "Finalizing...");
@@ -990,7 +1390,7 @@ export class BOSSAStrategy {
       this.log.info("Sending K# reset command to boot new firmware");
       this.log.command(
         "K#",
-        "System reset via NVIC_SystemReset() - boots into user code at 0x4000"
+        `System reset via NVIC_SystemReset() - boots into user code at 0x${goOffset.toString(16)}`,
       );
       if (progressCallback) progressCallback(98, "Resetting...");
 

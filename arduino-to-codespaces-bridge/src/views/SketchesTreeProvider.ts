@@ -9,7 +9,6 @@
 
 import * as vscode from "vscode";
 import * as path from "path";
-import * as fs from "fs";
 
 /**
  * Tree item for sketch display
@@ -18,12 +17,12 @@ class SketchItem extends vscode.TreeItem {
   constructor(
     public readonly label: string,
     public readonly sketchPath: string,
-    public readonly inoFile: string
+    public readonly inoFile: string,
   ) {
     super(label, vscode.TreeItemCollapsibleState.None);
     this.description = path.relative(
       vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "",
-      path.dirname(sketchPath)
+      path.dirname(sketchPath),
     );
     this.tooltip = `${label}\n${sketchPath}\nClick to open`;
     this.iconPath = new vscode.ThemeIcon("file-code");
@@ -43,7 +42,7 @@ class SketchFolder extends vscode.TreeItem {
   constructor(
     public readonly label: string,
     public readonly folderPath: string,
-    public readonly sketches: SketchItem[]
+    public readonly sketches: SketchItem[],
   ) {
     super(label, vscode.TreeItemCollapsibleState.Expanded);
     this.iconPath = new vscode.ThemeIcon("folder");
@@ -54,29 +53,9 @@ class SketchFolder extends vscode.TreeItem {
 type SketchTreeItem = SketchItem | SketchFolder;
 
 /**
- * Directories to ignore when scanning
- */
-const IGNORE_DIRS = new Set([
-  "web-client",
-  "arduino-to-codespaces-bridge",
-  "docs",
-  "scripts",
-  "build",
-  ".git",
-  ".github",
-  ".vscode",
-  ".devcontainer",
-  "node_modules",
-  "dist",
-  "out",
-]);
-
-/**
  * Provides tree items for the sketches view
  */
-export class SketchesTreeProvider
-  implements vscode.TreeDataProvider<SketchTreeItem>
-{
+export class SketchesTreeProvider implements vscode.TreeDataProvider<SketchTreeItem> {
   private _onDidChangeTreeData = new vscode.EventEmitter<
     SketchTreeItem | undefined | null | void
   >();
@@ -125,7 +104,7 @@ export class SketchesTreeProvider
     }
 
     const workspaceRoot = workspaceFolders[0].uri.fsPath;
-    const allSketches = this.findSketches(workspaceRoot);
+    const allSketches = await this.findSketches();
 
     if (allSketches.length === 0) {
       return [];
@@ -172,8 +151,8 @@ export class SketchesTreeProvider
           new SketchFolder(
             `${groupName} (${sketches.length})`,
             workspaceRoot,
-            sketches.sort((a, b) => a.label.localeCompare(b.label))
-          )
+            sketches.sort((a, b) => a.label.localeCompare(b.label)),
+          ),
         );
       }
     }
@@ -182,42 +161,32 @@ export class SketchesTreeProvider
   }
 
   /**
-   * Find all sketches in a directory
+   * Find all sketches in the workspace using the VS Code file search API
    */
-  private findSketches(dir: string, depth: number = 0): SketchItem[] {
+  private async findSketches(): Promise<SketchItem[]> {
     const sketches: SketchItem[] = [];
-    const maxDepth = 4;
-
-    if (depth > maxDepth) {
-      return sketches;
-    }
 
     try {
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      // Find all .ino files, excluding build output, hidden folders, and
+      // the bridge's own web-client (contains bundled tool sketches)
+      const uris = await vscode.workspace.findFiles(
+        "**/*.ino",
+        "**/{node_modules,dist,out,build,.git,.github,.vscode,.devcontainer,web-client}/**",
+      );
 
-      for (const entry of entries) {
-        if (!entry.isDirectory()) {
-          continue;
-        }
-        if (IGNORE_DIRS.has(entry.name)) {
-          continue;
-        }
-        if (entry.name.startsWith(".")) {
-          continue;
-        }
+      for (const uri of uris) {
+        const inoPath = uri.fsPath;
+        const sketchDir = path.dirname(inoPath);
+        const sketchName = path.basename(sketchDir);
+        const inoFileName = path.basename(inoPath);
 
-        const fullPath = path.join(dir, entry.name);
-        const inoFile = path.join(fullPath, `${entry.name}.ino`);
-
-        if (fs.existsSync(inoFile)) {
-          sketches.push(new SketchItem(entry.name, fullPath, inoFile));
-        } else {
-          // Recurse into subdirectory
-          sketches.push(...this.findSketches(fullPath, depth + 1));
+        // Arduino convention: main sketch file matches directory name
+        if (inoFileName === `${sketchName}.ino`) {
+          sketches.push(new SketchItem(sketchName, sketchDir, inoPath));
         }
       }
     } catch (error) {
-      // Ignore permission errors
+      console.error("Error finding sketches:", error);
     }
 
     return sketches;
