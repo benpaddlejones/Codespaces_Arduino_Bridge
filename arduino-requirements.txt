@@ -3,6 +3,7 @@
 
 # Platforms
 platform arduino:avr 1.8.6
+platform arduino:renesas_uno 1.6.0
 
 # Libraries
 library Servo 1.3.0
