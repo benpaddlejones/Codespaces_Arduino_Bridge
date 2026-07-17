@@ -14,7 +14,7 @@
     },
     {
       "name": "Arduino Uno R4 Minima",
-      "fqbn": "arduino:renesas_uno:unor4minima",
+      "fqbn": "arduino:renesas_uno:minima",
       "vid": ["0x2341"],
       "pid": ["0x0069"]
     },

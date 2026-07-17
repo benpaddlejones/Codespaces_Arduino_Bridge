@@ -419,9 +419,13 @@ export class DFUStrategy {
       );
     }
 
-    // A device pre-requested during a user gesture takes priority (WebUSB
-    // requestDevice must run inside a gesture handler).
-    if (typeof window !== "undefined" && window._dfuDevice) {
+    // Fast path: a bootloader device pre-requested during a user gesture
+    // (WebUSB requestDevice must run inside a gesture handler).
+    if (
+      typeof window !== "undefined" &&
+      window._dfuDevice &&
+      window._dfuDevice.productId === this.config.bootloaderPid
+    ) {
       this.device = window._dfuDevice;
       this.log.success(
         `Using pre-requested WebUSB device: ${this.device.productName || "Arduino DFU"}`,
@@ -431,16 +435,42 @@ export class DFUStrategy {
         this.device.productId,
         "Pre-selected device",
       );
-      if (this.device.productId === this.config.bootloaderPid) {
+      return;
+    }
+
+    // Fast path: bootloader already connected and previously paired.
+    try {
+      const pairedBoot = (await navigator.usb.getDevices()).find(
+        (d) =>
+          d.vendorId === this.config.vid &&
+          d.productId === this.config.bootloaderPid,
+      );
+      if (pairedBoot) {
+        this.device = pairedBoot;
+        if (typeof window !== "undefined") {
+          window._dfuDevice = pairedBoot;
+        }
         this.log.success(
-          `Device is in DFU bootloader mode (PID 0x${this.config.bootloaderPid.toString(16)})`,
+          "Device already in DFU bootloader mode - continuing flash",
         );
         return;
-      } else {
-        this.log.info(
-          `Device in application mode (PID 0x${this.config.applicationPid.toString(16)}) - triggering DFU detach`,
-        );
-        await this.triggerDfuDetach();
+      }
+    } catch (error) {
+      this.log.warn(`Paired-device check failed: ${error.message}`);
+    }
+
+    // PREFERRED PATH: 1200bps touch over Web Serial. The official
+    // ArduinoCore-renesas firmware reboots into the DFU bootloader whenever
+    // the CDC line coding is 1200 baud with DTR deasserted (CheckSerialReset
+    // in cores/arduino/usb/SerialUSB.cpp). This avoids WebUSB claimInterface
+    // on the runtime CDC device entirely - which the host cdc_acm kernel
+    // driver blocks in browsers (the reason automatic DFU detach never
+    // worked). boards.txt sets use_1200bps_touch=false only because dfu-util
+    // performs its own detach; the firmware itself fully supports the touch.
+    if (port) {
+      const touched = await this.performSerialTouch(port);
+      if (touched) {
+        await this.waitForBootloader();
         return;
       }
     }
@@ -544,7 +574,13 @@ export class DFUStrategy {
         );
       }
 
-      await this.device.claimInterface(dfuInterface.interfaceNumber);
+      // Diagnostic: dump the interface layout so a claim failure is debuggable
+      this.logInterfaceDescriptors();
+
+      this.log.info(
+        `Claiming DFU runtime interface ${dfuInterface.interfaceNumber}...`,
+      );
+      await this.claimInterfaceWithTimeout(dfuInterface.interfaceNumber, 8000);
       this.log.info(`Claimed DFU interface ${dfuInterface.interfaceNumber}`);
 
       this.log.command("DFU_DETACH", "Requesting device to enter DFU mode");
@@ -563,16 +599,240 @@ export class DFUStrategy {
       this.log.info("Device closed, waiting for re-enumeration...");
       await this.waitForBootloader();
     } catch (error) {
-      this.log.error(`DFU detach failed: ${error.message}`);
-      throw error;
+      // In a browser, WebUSB usually cannot claim the DFU runtime interface
+      // while the host CDC-ACM driver owns the composite device (native
+      // dfu-util works because libusb can detach the kernel driver; Chrome
+      // cannot). Fall back to user-driven bootloader entry - the user
+      // double-taps RESET so the board re-enumerates as a pure DFU device.
+      this.log.warn(`Automatic DFU detach unavailable: ${error.message}`);
+      try {
+        if (this.device && this.device.opened) {
+          await this.device.close();
+        }
+      } catch (closeError) {
+        this.log.info(`Cleanup close skipped: ${closeError.message}`);
+      }
+      // A timed-out claimInterface() can leave the current USBDevice object in
+      // a stuck state inside the browser USB stack. Drop references before the
+      // manual chooser so flash() cannot reuse a poisoned handle.
+      this.device = null;
+      if (typeof window !== "undefined") {
+        window._dfuDevice = null;
+      }
+      await this.enterBootloaderManually();
     }
+  }
+
+  /**
+   * Guide the user to enter the DFU bootloader manually when the browser
+   * cannot trigger the detach automatically (the host CDC-ACM driver holds
+   * the composite device). The user double-taps RESET; the board then
+   * re-enumerates as a pure DFU device (PID 0x0369) with no CDC interface,
+   * which WebUSB can claim cleanly for flashing.
+   * @returns {Promise<void>}
+   */
+  async enterBootloaderManually() {
+    this.log.section("MANUAL BOOTLOADER ENTRY");
+    this.log.warn(
+      "The browser cannot switch this board into DFU mode automatically.",
+    );
+
+    // The R4 Minima's DFU bootloader auto-exits back to application mode after
+    // roughly 8 seconds of inactivity. A long poll here misses that window, so
+    // we do NOT wait: first check whether the bootloader (PID 0x0369) is
+    // already paired from a previous upload (instant, no gesture needed), and
+    // otherwise hand straight to the chooser. The chooser button click IS the
+    // user gesture, so the user double-taps RESET and clicks within the same
+    // few seconds - the USB chooser then opens while the board is still in DFU
+    // mode and lists it for selection.
+    const alreadyPaired = (await navigator.usb.getDevices()).find(
+      (d) =>
+        d.vendorId === this.config.vid &&
+        d.productId === this.config.bootloaderPid,
+    );
+    if (alreadyPaired) {
+      this.device = alreadyPaired;
+      if (typeof window !== "undefined") {
+        window._dfuDevice = alreadyPaired;
+      }
+      this.log.success("DFU bootloader already paired - continuing flash");
+      return;
+    }
+
+    if (
+      typeof window === "undefined" ||
+      typeof window.requestDfuDevice !== "function"
+    ) {
+      throw new Error(
+        "Could not enter the DFU bootloader automatically. Double-tap the " +
+          "RESET button on the board, then try uploading again.",
+      );
+    }
+
+    this.log.info(
+      "DOUBLE-TAP the RESET button NOW - watch for the pulsing built-in LED - " +
+        "then immediately click the button in the dialog and pick the board. " +
+        "The DFU bootloader only stays active for a few seconds.",
+    );
+
+    // Keep the chooser strict: the official Arduino Renesas upload flow targets
+    // the DFU bootloader PID for flashing. Selecting app-mode here leads to
+    // InvalidStateError loops when a prior claimInterface timed out.
+    const device = await window.requestDfuDevice(
+      [{ vendorId: this.config.vid, productId: this.config.bootloaderPid }],
+      "1. DOUBLE-TAP the RESET button on your Arduino now (the built-in LED " +
+        "will pulse/fade).\n2. Then click \u201cSelect Device\u201d below and " +
+        "pick the Arduino from the USB chooser to finish flashing.",
+    );
+    if (!device) {
+      throw new Error("No DFU bootloader device selected.");
+    }
+    if (device.productId !== this.config.bootloaderPid) {
+      throw new Error(
+        "Selected device is not in DFU bootloader mode. Double-tap RESET " +
+          "until the LED pulses, then choose the DFU bootloader device.",
+      );
+    }
+    this.device = device;
+    if (typeof window !== "undefined") {
+      window._dfuDevice = device;
+    }
+    this.log.success("Bootloader device selected - continuing flash");
+  }
+
+  /**
+   * Reboot the board into its DFU bootloader using the 1200bps touch.
+   * Mirrors the official firmware behaviour (CheckSerialReset in
+   * cores/arduino/usb/SerialUSB.cpp): opening the CDC port at 1200 baud and
+   * dropping DTR makes the sketch write the double-tap magic and
+   * watchdog-reset into the bootloader (PID 0x0369). Works entirely over
+   * Web Serial - no WebUSB interface claim needed.
+   * @param {SerialPort} port - Web Serial port for the board (any state)
+   * @returns {Promise<boolean>} True when the touch sequence completed
+   */
+  async performSerialTouch(port) {
+    this.log.section("1200BPS TOUCH: Entering Bootloader (Web Serial)");
+    try {
+      if (port.readable || port.writable) {
+        await port.close();
+      }
+      // Chrome's open({baudRate:1200}) sends SET_LINE_CODING(1200) with DTR
+      // low. The firmware's CheckSerialReset() can fire MID-OPEN and reboot
+      // the board into the bootloader - which kills the COM port under
+      // Chrome, so open() itself rejects with NetworkError even though the
+      // touch WORKED. openPortWithRetry detects the re-enumeration
+      // (SerialPort.connected === false) and reports it as success.
+      const openResult = await this.openPortWithRetry(port, 1200, 8, 250);
+      if (openResult === "reenumerated") {
+        this.log.success(
+          "CDC port vanished - board rebooted into the DFU bootloader",
+        );
+        return true;
+      }
+      this.log.info("Port opened at 1200 baud");
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      if (typeof port.setSignals === "function") {
+        await port.setSignals({
+          dataTerminalReady: false,
+          requestToSend: false,
+        });
+        this.log.info("DTR deasserted");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      try {
+        await port.close();
+      } catch (closeError) {
+        // The board may reboot mid-close; that's expected.
+        this.log.info(`Close after touch: ${closeError.message}`);
+      }
+      this.log.success(
+        "1200bps touch sent - board should reboot into DFU bootloader",
+      );
+      return true;
+    } catch (error) {
+      // Before declaring failure, check whether the board actually left
+      // application mode (touch worked but every open raced the reboot).
+      if (port.connected === false) {
+        this.log.success(
+          "CDC port vanished - board rebooted into the DFU bootloader",
+        );
+        return true;
+      }
+      this.log.warn(`1200bps touch failed: ${error.message}`);
+      try {
+        if (port.readable || port.writable) {
+          await port.close();
+        }
+      } catch {
+        /* ignore */
+      }
+      return false;
+    }
+  }
+
+  /**
+   * Open a Web Serial port, retrying while the OS releases the handle.
+   * Detects board re-enumeration between attempts: when the 1200bps line
+   * coding lands, the firmware reboots into the bootloader and the CDC
+   * device disappears, so open() keeps failing even though the touch
+   * succeeded. SerialPort.connected === false (Chrome 117+) or the port
+   * vanishing from getPorts() identifies that case.
+   * @param {SerialPort} port - Port to open
+   * @param {number} baudRate - Baud rate for open()
+   * @param {number} attempts - Maximum attempts
+   * @param {number} delayMs - Delay between attempts
+   * @returns {Promise<string>} "opened" or "reenumerated"
+   */
+  async openPortWithRetry(port, baudRate, attempts, delayMs) {
+    let lastError = null;
+    for (let i = 1; i <= attempts; i++) {
+      try {
+        await port.open({ baudRate });
+        if (i > 1) {
+          this.log.info(`Port opened on attempt ${i}`);
+        }
+        return "opened";
+      } catch (error) {
+        lastError = error;
+        const connected = port.connected;
+        // connected === false means the OS-level device is gone: the board
+        // re-enumerated (rebooted into its bootloader). That IS the goal.
+        if (connected === false) {
+          return "reenumerated";
+        }
+        // Fallback for older Chrome without SerialPort.connected: check
+        // whether the granted app-mode serial port disappeared.
+        if (connected === undefined) {
+          try {
+            const stillPresent = (await navigator.serial.getPorts()).some(
+              (p) => {
+                const info = p.getInfo();
+                return (
+                  info.usbVendorId === this.config.vid &&
+                  info.usbProductId === this.config.applicationPid
+                );
+              },
+            );
+            if (!stillPresent) {
+              return "reenumerated";
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+        if (i < attempts) {
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
+      }
+    }
+    throw lastError;
   }
 
   /** Poll for the device re-appearing with the bootloader PID */
   async waitForBootloader() {
-    this.log.wait(8000, "Waiting for device to enter DFU bootloader...");
+    this.log.wait(3000, "Waiting for device to enter DFU bootloader...");
     const pollMs = 100;
-    const attempts = Math.ceil(8000 / pollMs);
+    const attempts = Math.ceil(3000 / pollMs);
 
     for (let i = 0; i < attempts; i++) {
       await new Promise((resolve) => setTimeout(resolve, pollMs));
@@ -598,36 +858,80 @@ export class DFUStrategy {
       }
     }
 
-    // Bootloader did not auto-pair - ask the UI layer to prompt the user
     this.log.warn(
-      "Device not found automatically, prompting user to select DFU device...",
+      "Bootloader not paired with the browser yet - prompting for one-time device selection...",
     );
     if (
       typeof window !== "undefined" &&
       typeof window.requestDfuDevice === "function"
     ) {
-      try {
-        const device = await window.requestDfuDevice(
-          [
-            { vendorId: this.config.vid, productId: this.config.bootloaderPid },
-            {
-              vendorId: this.config.vid,
-              productId: this.config.applicationPid,
-            },
-          ],
-          "Select the Arduino DFU device",
-        );
-        if (device) {
-          this.device = device;
-          if (typeof window !== "undefined") {
-            window._dfuDevice = device;
+      // On first use Windows can take several seconds to install the driver
+      // for the never-before-seen DFU device, so an early chooser may list
+      // nothing. Allow a second attempt after a settling delay.
+      const chooserMessage =
+        "The board is now in DFU mode - its built-in LED should be PULSING. " +
+        "Click \u201cSelect Device\u201d and pick the DFU device (e.g. " +
+        "\u201cSantiago DFU\u201d for the R4 Minima). " +
+        "If the list is EMPTY on Windows, the WinUSB driver is missing - " +
+        "install it once with Zadig (zadig.akeo.ie): List All Devices \u2192 " +
+        "the DFU device \u2192 WinUSB \u2192 Install. This pairing is only needed once.";
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const device = await window.requestDfuDevice(
+            [
+              {
+                vendorId: this.config.vid,
+                productId: this.config.bootloaderPid,
+              },
+            ],
+            chooserMessage,
+          );
+          if (device) {
+            if (device.productId !== this.config.bootloaderPid) {
+              throw new Error(
+                "Selected device is not in DFU bootloader mode. Double-tap " +
+                  "RESET and select the bootloader device.",
+              );
+            }
+            this.device = device;
+            if (typeof window !== "undefined") {
+              window._dfuDevice = device;
+            }
+            this.log.success("DFU device selected via manual prompt");
+            return;
           }
-          this.log.success("DFU device selected via manual prompt");
-          return;
+        } catch (error) {
+          if (error.name === "NotFoundError" && attempt < 2) {
+            this.log.warn(
+              "No device selected - waiting 4s for Windows to finish " +
+                "installing the DFU driver, then offering the chooser again...",
+            );
+            await new Promise((resolve) => setTimeout(resolve, 4000));
+            continue;
+          }
+          this.log.error(`Manual DFU selection failed: ${error.message}`);
+          // An empty chooser on Windows means the WinUSB driver is not
+          // installed for the DFU bootloader - surface the one-time fix
+          // directly in the terminal error instead of a generic message.
+          if (
+            error.name === "NotFoundError" &&
+            typeof navigator !== "undefined" &&
+            /Windows/i.test(navigator.userAgent)
+          ) {
+            throw new Error(
+              "No DFU device was selected. If the device list was EMPTY, " +
+                "Windows is missing the driver for the board's DFU " +
+                "bootloader (one-time setup, needed for all UNO R4 family " +
+                "boards): open Device Manager and check for a DFU device " +
+                "(e.g. 'Santiago DFU') with a warning icon, then install " +
+                "the WinUSB driver with Zadig (zadig.akeo.ie: Options > " +
+                "List All Devices > the DFU device > WinUSB > Install) or " +
+                "install the Arduino IDE with the UNO R4 board package. " +
+                "Then try uploading again.",
+            );
+          }
+          throw error;
         }
-      } catch (error) {
-        this.log.error(`Manual DFU selection failed: ${error.message}`);
-        throw error;
       }
     }
     throw new Error(
@@ -649,6 +953,62 @@ export class DFUStrategy {
       }
     }
     return null;
+  }
+
+  /**
+   * Claim a USB interface but reject if the OS never grants it. WebUSB's
+   * claimInterface() can block indefinitely when another driver (e.g. the
+   * host CDC-ACM serial driver) still holds the composite device, which
+   * otherwise freezes the whole upload with no error. The timeout converts
+   * that silent hang into a clear, actionable failure.
+   * @param {number} interfaceNumber - Interface to claim
+   * @param {number} timeoutMs - Milliseconds to wait before giving up
+   * @returns {Promise<void>}
+   */
+  async claimInterfaceWithTimeout(interfaceNumber, timeoutMs) {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        reject(
+          new Error(
+            `Timed out claiming USB interface ${interfaceNumber} after ` +
+              `${timeoutMs}ms. Another driver may still hold the port. ` +
+              "Unplug and replug the board, close any other serial monitor, " +
+              "then try again - or double-tap the RESET button to enter the " +
+              "bootloader manually and use the Upload button.",
+          ),
+        );
+      }, timeoutMs);
+    });
+    try {
+      await Promise.race([
+        this.device.claimInterface(interfaceNumber),
+        timeout,
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /** Log the device's USB interface/alternate descriptors for diagnostics */
+  logInterfaceDescriptors() {
+    try {
+      const cfg = this.device.configuration;
+      if (!cfg) {
+        this.log.info("No active USB configuration to describe");
+        return;
+      }
+      for (const iface of cfg.interfaces) {
+        const alt = iface.alternates[0];
+        const cls = alt.interfaceClass.toString(16).padStart(2, "0");
+        const sub = alt.interfaceSubclass.toString(16).padStart(2, "0");
+        this.log.info(
+          `IF${iface.interfaceNumber}: class=0x${cls} subclass=0x${sub} claimed=${iface.claimed}`,
+        );
+      }
+    } catch (err) {
+      this.log.info(`Could not read interface descriptors: ${err.message}`);
+    }
   }
 
   /** Log descriptor details for diagnostics */
@@ -811,6 +1171,16 @@ export class DFUStrategy {
           await new Promise((resolve) => setTimeout(resolve, 200));
         } catch (error) {
           this.log.warn(`Could not close device: ${error.message}`);
+          // close() fails when a claimInterface() from a prior attempt is still
+          // pending in the browser USB stack (InvalidStateError). The device
+          // object is permanently stuck; open() will also fail. Surface a clear
+          // message so the user knows what to do instead of showing a cryptic
+          // WebUSB internal error.
+          throw new Error(
+            "The USB device is stuck from a previous operation. " +
+              "Please double-tap the RESET button on the board (the LED will " +
+              "pulse), then click Upload again.",
+          );
         }
       }
 

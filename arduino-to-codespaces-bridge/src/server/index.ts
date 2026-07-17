@@ -82,9 +82,70 @@ interface IndexStatus {
   needsRefresh: boolean;
 }
 
+interface MissingInclude {
+  header: string;
+  query: string;
+  isLibraryInclude: boolean | null;
+  suggestions: Array<{
+    name: string;
+    latestVersion?: string;
+    author?: string;
+  }>;
+}
+
 // =============================================================================
 // Constants
 // =============================================================================
+
+/** Standard C/C++ headers that should not trigger library suggestions */
+const STANDARD_LIBRARY_HEADERS = new Set<string>([
+  "assert",
+  "arduino",
+  "complex",
+  "ctype",
+  "errno",
+  "float",
+  "inttypes",
+  "limits",
+  "locale",
+  "math",
+  "setjmp",
+  "signal",
+  "stdarg",
+  "stdbool",
+  "stddef",
+  "stdint",
+  "stdio",
+  "stdlib",
+  "string",
+  "time",
+]);
+
+/**
+ * Pattern to detect include style from a source line:
+ * #include <header.h> = library include, #include "header.h" = local file.
+ */
+const INCLUDE_STYLE_PATTERN = /#include\s*([<"])([^>"]+)[>"]/;
+
+/** Patterns that identify missing-include errors in compiler output */
+const MISSING_INCLUDE_PATTERNS: RegExp[] = [
+  // GCC style: fatal error: Servo.h: No such file or directory
+  /fatal error:\s*([^\s:]+\.h(?:pp|xx)?)\s*:\s*No such file or directory/i,
+  // Clang style with quotes/angles
+  /fatal error:\s*['"]([^'"]+)['"]\s*file not found/i,
+  /error:\s*['"]([^'"]+)['"]\s*file not found/i,
+  // Generic fallback
+  /No such file or directory[:]?\s*['"]?([^'":\s]+\.h(?:pp|xx)?)['"]?/i,
+];
+
+/**
+ * Normalize a library name for comparison (lowercase, alphanumeric only).
+ * @param name - Library name to normalize
+ * @returns Normalized name
+ */
+function normalizeLibraryName(name: string): string {
+  return (name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
 
 // =============================================================================
 // BridgeServer Class
@@ -412,6 +473,137 @@ export class BridgeServer extends EventEmitter {
   }
 
   /**
+   * Scan compiler output for missing-header errors and suggest installable
+   * libraries for each one (skipping headers from libraries that are already
+   * installed and standard C/C++ headers).
+   *
+   * @param compileLog Full compiler output.
+   * @returns Missing include descriptors with Library Manager suggestions.
+   */
+  private async detectMissingIncludes(
+    compileLog: string,
+  ): Promise<MissingInclude[]> {
+    if (!compileLog) {
+      return [];
+    }
+
+    const lines = compileLog.split(/\r?\n/);
+    const missingHeaders = new Map<
+      string,
+      { header: string; baseName: string; isLibraryInclude: boolean | null }
+    >();
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      for (const pattern of MISSING_INCLUDE_PATTERNS) {
+        const match = line.match(pattern);
+        if (!match || !match[1]) {
+          continue;
+        }
+        const rawHeader = match[1].trim();
+        const headerName = path.basename(rawHeader);
+        const baseName = headerName.replace(/\.(h|hh|hpp|hxx)$/i, "");
+        const normalizedBase = normalizeLibraryName(baseName);
+
+        // Determine include style (<lib.h> vs "file.h") from nearby source
+        // context lines that GCC echoes with the error.
+        let isAngleBracket: boolean | null = null;
+        for (
+          let j = Math.max(0, i - 2);
+          j < Math.min(lines.length, i + 3);
+          j++
+        ) {
+          const includeMatch = lines[j].match(INCLUDE_STYLE_PATTERN);
+          if (includeMatch && lines[j].includes(rawHeader)) {
+            isAngleBracket = includeMatch[1] === "<";
+            break;
+          }
+        }
+
+        if (!baseName || normalizedBase.length < 2) {
+          break;
+        }
+        if (STANDARD_LIBRARY_HEADERS.has(normalizedBase)) {
+          break;
+        }
+
+        missingHeaders.set(normalizedBase, {
+          header: rawHeader,
+          baseName,
+          isLibraryInclude: isAngleBracket,
+        });
+        break;
+      }
+    }
+
+    if (missingHeaders.size === 0) {
+      return [];
+    }
+
+    // Skip headers whose library is already installed
+    let installedNormalized = new Set<string>();
+    try {
+      const listResult = await this.runCliCommand(["lib", "list"], {
+        addJson: true,
+        timeoutMs: 15_000,
+      });
+      if (listResult.success && listResult.data) {
+        const installed = Array.isArray(listResult.data.installed_libraries)
+          ? listResult.data.installed_libraries
+          : [];
+        installedNormalized = new Set(
+          installed
+            .map((item: any) =>
+              normalizeLibraryName((item.library || item).name || ""),
+            )
+            .filter(Boolean),
+        );
+      }
+    } catch {
+      /* best-effort - suggestions still useful without installed list */
+    }
+
+    const results: MissingInclude[] = [];
+    for (const [normalizedBase, info] of missingHeaders.entries()) {
+      if (installedNormalized.has(normalizedBase)) {
+        continue;
+      }
+
+      let suggestions: MissingInclude["suggestions"] = [];
+      if (info.isLibraryInclude !== false && this.isSafeCliArg(info.baseName)) {
+        try {
+          const searchResult = await this.runCliCommand(
+            ["lib", "search", info.baseName],
+            { addJson: true, timeoutMs: 20_000 },
+          );
+          if (searchResult.success && searchResult.data) {
+            const libraries = Array.isArray(searchResult.data.libraries)
+              ? searchResult.data.libraries
+              : [];
+            suggestions = libraries.slice(0, 3).map((lib: any) => ({
+              name: lib.name,
+              latestVersion:
+                lib.latest?.version || lib.latest_version || undefined,
+              author: lib.latest?.author || lib.author || undefined,
+            }));
+          }
+        } catch {
+          /* suggestions are best-effort */
+        }
+      }
+
+      results.push({
+        header: info.header,
+        query: info.baseName,
+        isLibraryInclude: info.isLibraryInclude,
+        suggestions,
+      });
+    }
+
+    return results;
+  }
+
+  /**
    * Normalize a raw arduino-cli platform record into the shape used by the UI.
    *
    * @param platform Raw platform object from arduino-cli JSON output.
@@ -705,7 +897,13 @@ export class BridgeServer extends EventEmitter {
           artifact = { name, url: `/api/hex/${sketchName}`, size };
         }
 
-        res.json({ ...result, log, artifact, missingIncludes: [] });
+        // On failure, scan the compiler output for missing headers so the
+        // client can guide the user to the Library Manager.
+        const missingIncludes = result.success
+          ? []
+          : await this.detectMissingIncludes(log);
+
+        res.json({ ...result, log, artifact, missingIncludes });
       } catch (error: any) {
         res.status(500).json({ success: false, error: error.message });
       }

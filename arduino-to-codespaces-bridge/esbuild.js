@@ -59,11 +59,15 @@ function copyDir(src, dest) {
 async function main() {
   // Ensure dist directory exists
   fs.mkdirSync("dist", { recursive: true });
-  fs.mkdirSync("dist/web", { recursive: true });
+
+  // Clean dist/web so stale hashed bundles from previous builds don't
+  // accumulate inside the packaged VSIX.
+  const webDestPath = path.join(__dirname, "dist", "web");
+  fs.rmSync(webDestPath, { recursive: true, force: true });
+  fs.mkdirSync(webDestPath, { recursive: true });
 
   // Copy web client files if they exist (now inside web-client folder)
   const webSourcePath = path.join(__dirname, "web-client", "dist");
-  const webDestPath = path.join(__dirname, "dist", "web");
 
   if (fs.existsSync(webSourcePath)) {
     console.log("Copying web client files...");

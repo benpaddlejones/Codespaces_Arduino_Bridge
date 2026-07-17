@@ -11,7 +11,7 @@
       "includePath": [
         "${workspaceFolder}/**",
         "/home/node/.arduino15/packages/arduino/hardware/renesas_uno/1.6.0/cores/arduino",
-        "/home/node/.arduino15/packages/arduino/hardware/renesas_uno/1.6.0/variants/MINIMA",
+        "/home/node/.arduino15/packages/arduino/hardware/renesas_uno/1.6.0/variants/NANOR4",
         "/home/node/.arduino15/packages/arduino/hardware/renesas_uno/1.6.0/libraries/**",
         "/home/node/Arduino/libraries/**",
         "/home/node/.arduino15/packages/arduino/tools/arm-none-eabi-gcc/7-2017q4/arm-none-eabi/include"
@@ -23,7 +23,7 @@
       "cppStandard": "c++17",
       "defines": [
         "ARDUINO=10607",
-        "ARDUINO_MINIMA",
+        "ARDUINO_nanor4",
         "ARDUINO_ARCH_RENESAS_UNO"
       ]
     }

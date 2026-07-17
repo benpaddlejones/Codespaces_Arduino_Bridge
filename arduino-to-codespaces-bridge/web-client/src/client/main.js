@@ -438,6 +438,82 @@ function closeModal(modal) {
   modal.style.display = "none";
 }
 
+// ==========================================
+// Guidance Popups (onboarding / missing platform / missing library)
+// ==========================================
+
+const guidanceModal = document.getElementById("guidanceModal");
+const guidanceTitle = document.getElementById("guidanceTitle");
+const guidanceBody = document.getElementById("guidanceBody");
+const guidanceActionBtn = document.getElementById("guidanceActionBtn");
+const guidanceDismissBtn = document.getElementById("guidanceDismissBtn");
+
+/**
+ * Show a guidance popup with a title, message paragraphs and an optional
+ * primary action button. Content is set with textContent (no HTML injection).
+ * @param {object} options - Popup options
+ * @param {string} options.title - Modal heading
+ * @param {string[]} options.lines - Paragraphs of guidance text
+ * @param {string} [options.actionLabel] - Primary button label
+ * @param {Function} [options.onAction] - Primary button handler
+ */
+function showGuidance({ title, lines, actionLabel, onAction }) {
+  if (!guidanceModal || !guidanceTitle || !guidanceBody) {
+    return;
+  }
+  guidanceTitle.textContent = title;
+  guidanceBody.replaceChildren();
+  for (const line of lines) {
+    const p = document.createElement("p");
+    p.textContent = line;
+    guidanceBody.appendChild(p);
+  }
+
+  const hasAction = Boolean(actionLabel && onAction);
+  guidanceActionBtn.style.display = hasAction ? "" : "none";
+  if (hasAction) {
+    guidanceActionBtn.textContent = actionLabel;
+  }
+
+  const cleanup = () => {
+    closeModal(guidanceModal);
+    guidanceActionBtn.removeEventListener("click", handleAction);
+    guidanceDismissBtn.removeEventListener("click", handleDismiss);
+  };
+  const handleAction = () => {
+    cleanup();
+    if (onAction) {
+      onAction();
+    }
+  };
+  const handleDismiss = () => cleanup();
+
+  guidanceActionBtn.addEventListener("click", handleAction);
+  guidanceDismissBtn.addEventListener("click", handleDismiss);
+  openModal(guidanceModal, guidanceDismissBtn);
+}
+
+/**
+ * Switch to a main navigation view and optionally pre-fill its search box
+ * so the user lands directly on relevant results.
+ * @param {string} viewName - Nav view name ("boards" | "libraries" | ...)
+ * @param {string} [searchTerm] - Text to type into the view's search input
+ */
+function openViewWithSearch(viewName, searchTerm) {
+  const tab = document.querySelector(`.nav-tab[data-view="${viewName}"]`);
+  if (tab) {
+    tab.click();
+  }
+  if (searchTerm) {
+    const inputId = viewName === "boards" ? "board-search" : "lib-search";
+    const input = document.getElementById(inputId);
+    if (input) {
+      input.value = searchTerm;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  }
+}
+
 let isPlotterMode = false;
 
 function setupConsoleBridge(terminalInstance) {
@@ -655,6 +731,9 @@ toggleViewBtn.addEventListener("click", () => {
 });
 
 let availableBoards = [];
+/** Boards known to the bridge by VID/PID (from boards.json), including
+ *  boards whose platform core is NOT installed yet. */
+let knownBoardsCatalog = [];
 
 // Load Boards
 async function loadBoards() {
@@ -673,6 +752,7 @@ async function loadBoards() {
       const jsonData = await jsonRes.json();
       knownBoards = jsonData.boards || [];
     }
+    knownBoardsCatalog = knownBoards;
 
     boardSelect.innerHTML = "";
     availableBoards = apiData.boards || [];
@@ -828,6 +908,37 @@ if (includeExamplesCheck) {
 async function initialize() {
   await Promise.all([loadBoards(), loadSketches()]);
   updateCompileButtons();
+  void checkPlatformsInstalled();
+}
+
+/**
+ * First-run onboarding: when no board platforms are installed in the
+ * Codespace, compiling is impossible - guide the user to the Board Manager.
+ */
+async function checkPlatformsInstalled() {
+  try {
+    const res = await fetch("/api/cli/cores/installed");
+    const data = await res.json();
+    if (
+      data.success &&
+      Array.isArray(data.platforms) &&
+      data.platforms.length === 0
+    ) {
+      showGuidance({
+        title: "\ud83d\udc4b Welcome - install a board platform first",
+        lines: [
+          "No Arduino board platforms are installed in this Codespace yet, so sketches cannot be compiled.",
+          'Open the Board Manager tab, search for your board (e.g. "uno" or "uno r4"), and click Install.',
+          "The platform is saved to arduino-requirements.txt, so it is restored automatically next time.",
+        ],
+        actionLabel: "Open Board Manager",
+        onAction: () => openViewWithSearch("boards", ""),
+      });
+    }
+  } catch (error) {
+    // Bridge offline is reported elsewhere; onboarding is best-effort.
+    logger.warn("Platform onboarding check failed", error);
+  }
 }
 
 initialize();
@@ -1029,6 +1140,30 @@ async function compileSketch(sketchPathOverride = null) {
         terminal.write(
           "   💡 After installing, recompile to refresh IntelliSense\r\n",
         );
+
+        // Popup with actionable install guidance for the missing libraries.
+        const first = libraryIncludes[0];
+        const firstSuggestion =
+          (Array.isArray(first.suggestions) && first.suggestions[0]?.name) ||
+          first.query ||
+          first.header.replace(/\.h$/i, "");
+        showGuidance({
+          title: "📚 Missing library",
+          lines: [
+            "This sketch includes libraries that are not installed:",
+            ...libraryIncludes.map((item) => {
+              const names = Array.isArray(item.suggestions)
+                ? item.suggestions.map((lib) => lib.name).filter(Boolean)
+                : [];
+              return names.length
+                ? `<${item.header}> - install "${names.join('" or "')}"`
+                : `<${item.header}> - search for "${item.query}"`;
+            }),
+            "Open the Library Manager tab, search for the library, click Install, then compile again.",
+          ],
+          actionLabel: "Open Library Manager",
+          onAction: () => openViewWithSearch("libraries", firstSuggestion),
+        });
       }
     }
 
@@ -1063,7 +1198,11 @@ async function handleUpload(port, firmwareData, fqbn) {
       await serialManager.disconnect();
     }
 
-    // Reopen port at 115200 for AVR upload (DTR toggle needs open port)
+    // Reopen the Web Serial port at 115200 before flashing. This matches the
+    // published 1.1.1 behaviour (the version confirmed working for the UNO R4
+    // Minima): keeping the serial port open here lets the DFU strategy's
+    // WebUSB claimInterface() succeed, and serial-based strategies (AVR
+    // STK500, BOSSA, ...) need the open port for their DTR reset toggle.
     if (!activePort.readable || !activePort.writable) {
       await activePort.open({ baudRate: 115200 });
     }
@@ -1355,11 +1494,41 @@ async function handleUpload(port, firmwareData, fqbn) {
         getDefaultBaudRate(boardSelect.value);
       lastWorkingBaudRate = baudRate;
       baudSelect.value = baudRate.toString();
-      // If we have a saved port, try to reuse it
-      if (port) {
-        await serialManager.connect(baudRate, port);
-      } else {
-        await serialManager.connect(baudRate);
+      // Retry: the board may be sitting in its DFU bootloader (no CDC port)
+      // for ~10s after a failed touch/flash before rebooting into the app,
+      // and a re-enumerated device needs a FRESH SerialPort object - the
+      // saved one is dead. Refresh from getPorts() (granted ports) on each
+      // retry per the Web Serial API guidance.
+      let recovered = false;
+      for (let attempt = 1; attempt <= 6 && !recovered; attempt++) {
+        try {
+          if (attempt > 1 || !port) {
+            try {
+              const granted = await navigator.serial.getPorts();
+              // Prefer a connected granted port; fall back to the saved one.
+              const fresh = granted.find((p) => p.connected !== false);
+              if (fresh) {
+                port = fresh;
+              }
+            } catch (portsError) {
+              logger.warn("getPorts() refresh failed", portsError);
+            }
+          }
+          // If we have a saved port, try to reuse it
+          if (port) {
+            await serialManager.connect(baudRate, port);
+          } else {
+            await serialManager.connect(baudRate);
+          }
+          recovered = true;
+        } catch (retryError) {
+          logger.warn(`Recovery attempt ${attempt} failed`, retryError);
+          if (attempt < 6) {
+            await new Promise((r) => setTimeout(r, 2000));
+          } else {
+            throw retryError;
+          }
+        }
       }
 
       try {
@@ -1746,6 +1915,39 @@ connectBtn.addEventListener("click", async () => {
         boardSelect.value = detectedBoard.fqbn;
         terminal.write(`\r\nAuto-detected board: ${detectedBoard.name}\r\n`);
         updateCompileButtons();
+      } else {
+        // The board is recognised by VID/PID but absent from the installed
+        // boards list - its platform core is not installed yet.
+        const knownBoard = knownBoardsCatalog.find((b) => {
+          if (!b.vid || !b.pid) return false;
+          const vidMatch = b.vid.some(
+            (v) => parseInt(v) === portInfo.usbVendorId,
+          );
+          const pidMatch = b.pid.some(
+            (p) => parseInt(p) === portInfo.usbProductId,
+          );
+          return vidMatch && pidMatch;
+        });
+        if (knownBoard && knownBoard.fqbn) {
+          const platformId = knownBoard.fqbn.split(":").slice(0, 2).join(":");
+          terminal.write(
+            `\r\nDetected ${knownBoard.name}, but its board platform (${platformId}) is not installed.\r\n`,
+          );
+          showGuidance({
+            title: "\ud83d\udce6 Board platform required",
+            lines: [
+              `Your ${knownBoard.name} was detected, but the "${platformId}" platform needed to compile for it is not installed.`,
+              "Open the Board Manager tab, find the board, and click Install (this can take a minute or two).",
+              "When the install finishes, select your sketch and compile again.",
+            ],
+            actionLabel: "Open Board Manager",
+            onAction: () =>
+              openViewWithSearch(
+                "boards",
+                knownBoard.name.replace(/^Arduino\s+/i, ""),
+              ),
+          });
+        }
       }
     }
 

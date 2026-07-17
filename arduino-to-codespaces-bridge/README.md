@@ -63,13 +63,19 @@ objects, for example:
 
 ## Supported Boards
 
-| Board               | Protocol | Status          |
-| ------------------- | -------- | --------------- |
-| Arduino Uno (R3)    | STK500   | ✅ Working      |
-| Arduino Uno R4 WiFi | BOSSA    | ✅ Working      |
-| Arduino Nano        | STK500   | ✅ Working      |
-| Arduino Mega 2560   | STK500v2 | ✅ Working      |
-| ESP32               | ESPTool  | 🔄 Experimental |
+| Board                 | Protocol     | Status          |
+| --------------------- | ------------ | --------------- |
+| Arduino Uno (R3)      | STK500       | ✅ Working      |
+| Arduino Uno R4 WiFi   | BOSSA        | ✅ Working \*   |
+| Arduino Uno R4 Minima | DFU (WebUSB) | ✅ Working \*   |
+| Arduino Nano R4       | DFU (WebUSB) | ✅ Working \*   |
+| Arduino Nano          | STK500       | ✅ Working      |
+| Arduino Mega 2560     | STK500v2     | ✅ Working      |
+| ESP32                 | ESPTool      | 🔄 Experimental |
+
+\* All UNO R4 family boards (Minima, WiFi, Nano R4) require a one-time
+driver install on Windows - see
+[Troubleshooting](#r4-board-upload-fails-on-windows-empty-device-list).
 
 ## How It Works
 
@@ -95,6 +101,30 @@ objects, for example:
 
 - Check that the correct board is selected
 - Try pressing the reset button on your Arduino before uploading
+
+### R4 board upload fails on Windows (empty device list)?
+
+This applies to the whole **UNO R4 family** (R4 Minima, R4 WiFi, Nano R4).
+These boards are flashed through their bootloader, and Chrome on Windows can
+only see the bootloader device when the **WinUSB driver** is installed -
+without it the USB device chooser is empty and Device Manager shows the
+bootloader (e.g. "Santiago DFU" for the R4 Minima) with a yellow warning
+(Code 28).
+
+**One-time fix per PC** (either option):
+
+1. **Zadig** (fastest): download [zadig.akeo.ie](https://zadig.akeo.ie),
+   double-tap the board's RESET button (LED pulses), then in Zadig:
+   _Options → List All Devices_ → select the board's DFU/bootloader device
+   (e.g. **Santiago DFU**) → target driver **WinUSB** → _Install Driver_.
+   Repeat once per board model.
+2. **Arduino IDE**: install the Arduino IDE plus the "Arduino UNO R4 Boards"
+   package - its driver installer registers the drivers for all R4 boards
+   in one go.
+
+After the driver is installed, the first upload shows a one-time USB pairing
+dialog (pick the board's DFU device); every upload after that is fully
+automatic. macOS, Linux, and ChromeOS need no driver.
 
 ## License
 

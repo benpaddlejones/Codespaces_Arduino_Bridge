@@ -78,7 +78,52 @@ export class WebSerialProvider {
       disconnect: [],
       reconnect: [],
       reconnect_failed: [],
+      portConnected: [],
     };
+
+    this.registerNavigatorEvents();
+  }
+
+  /**
+   * Register navigator.serial connect/disconnect listeners as recommended
+   * by the Web Serial API. "connect" fires when a granted device is
+   * (re)attached - including a board returning from its bootloader - and
+   * provides a live SerialPort object, which is more reliable than
+   * re-opening a stale reference. "disconnect" gives positive confirmation
+   * the device left (unplug or re-enumeration into another mode).
+   */
+  registerNavigatorEvents() {
+    if (
+      typeof navigator === "undefined" ||
+      !navigator.serial ||
+      typeof navigator.serial.addEventListener !== "function"
+    ) {
+      return;
+    }
+    navigator.serial.addEventListener("connect", (event) => {
+      const info =
+        typeof event.target.getInfo === "function"
+          ? event.target.getInfo()
+          : {};
+      serialLogger.info("Serial device connected (navigator event)", info);
+      this.emit("portConnected", event.target);
+      // Adopt the returning device when we lost ours and adoption is on
+      // (enabled by the recovery flow after reconnect retries fail).
+      if (this.autoReconnect && !this.port && !this.cleaningUp) {
+        serialLogger.info("Adopting newly connected port for reconnection");
+        this.connect(this.lastBaudRate, event.target).catch((error) => {
+          serialLogger.warn("Auto-adopt reconnect failed", error);
+        });
+      }
+    });
+    navigator.serial.addEventListener("disconnect", (event) => {
+      if (event.target === this.port) {
+        serialLogger.warn("Serial device disconnected (navigator event)");
+        // The read loop notices the stream error as well; this is the
+        // spec-level positive signal that the device is gone.
+        this.emit("disconnect", { unexpected: true });
+      }
+    });
   }
 
   /**
@@ -235,10 +280,9 @@ export class WebSerialProvider {
       return false;
     }
 
+    const encoder = new TextEncoder();
+    const writer = this.port.writable.getWriter();
     try {
-      const encoder = new TextEncoder();
-      const writer = this.port.writable.getWriter();
-
       // Create timeout promise
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => reject(new Error("Write timeout")), WRITE_TIMEOUT_MS);
@@ -246,20 +290,18 @@ export class WebSerialProvider {
 
       // Race write against timeout
       await Promise.race([writer.write(encoder.encode(data)), timeoutPromise]);
-
-      writer.releaseLock();
       return true;
     } catch (error) {
       serialLogger.error("Write error", error);
-
-      // If timeout, try to release lock
-      try {
-        this.port?.writable?.getWriter()?.releaseLock();
-      } catch (e) {
-        // Ignore
-      }
-
       return false;
+    } finally {
+      // Always release THIS writer's lock (getting a new writer on a locked
+      // stream throws and leaks the original lock, poisoning future writes).
+      try {
+        writer.releaseLock();
+      } catch (e) {
+        // Ignore release errors
+      }
     }
   }
 

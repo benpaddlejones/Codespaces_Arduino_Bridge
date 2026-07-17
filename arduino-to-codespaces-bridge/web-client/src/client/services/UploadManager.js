@@ -80,6 +80,18 @@ export class UploadManager {
   }
 
   /**
+   * Whether a board's upload strategy communicates over WebUSB (DFU) rather
+   * than Web Serial. WebUSB uploads need exclusive access to the device, so
+   * the caller must fully close/release the Web Serial port first — leaving
+   * it open blocks the DFU `claimInterface` call.
+   * @param {string} fqbn - Fully qualified board name
+   * @returns {boolean} True when the strategy uses WebUSB (DFU)
+   */
+  usesWebUsb(fqbn) {
+    return this.getStrategy(fqbn) instanceof DFUStrategy;
+  }
+
+  /**
    * Upload firmware to a board
    * @param {SerialPort} port - Serial port for upload
    * @param {ArrayBuffer|string} hexString - Firmware data
