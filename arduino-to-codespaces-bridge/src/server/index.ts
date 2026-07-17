@@ -1857,6 +1857,10 @@ export class BridgeServer extends EventEmitter {
   /**
    * List sketches in workspace using the VS Code file search API
    * (respects workspace scope, symlinks, and remote filesystems).
+   * Falls back to a direct filesystem scan when findFiles returns nothing:
+   * right after the extension host starts, the workspace file index may not
+   * be ready yet and findFiles yields an empty result even though sketches
+   * exist (seen as an empty sketch dropdown on first page load).
    */
   private async listSketches(): Promise<SketchInfo[]> {
     const sketches: SketchInfo[] = [];
@@ -1886,6 +1890,62 @@ export class BridgeServer extends EventEmitter {
       this.log(`Error listing sketches: ${error.message}`);
     }
 
+    if (sketches.length > 0) {
+      return sketches;
+    }
+    return this.scanSketchesOnDisk();
+  }
+
+  /**
+   * Scan the workspace directory tree for sketch folders directly on disk.
+   * Used as a fallback when the VS Code file index is not ready yet.
+   *
+   * @returns Sketch folders containing a matching <dirname>.ino file.
+   */
+  private scanSketchesOnDisk(): SketchInfo[] {
+    const ignoreDirs = new Set([
+      "node_modules",
+      "dist",
+      "out",
+      "build",
+      ".git",
+      ".github",
+      ".vscode",
+      ".devcontainer",
+      "web-client",
+    ]);
+    const sketches: SketchInfo[] = [];
+
+    const walk = (dir: string, depth: number): void => {
+      if (depth > 5) {
+        return;
+      }
+      let entries: fs.Dirent[];
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      const dirName = path.basename(dir);
+      if (entries.some((e) => e.isFile() && e.name === `${dirName}.ino`)) {
+        sketches.push({
+          name: dirName,
+          path: path.relative(this.workspaceRoot, dir),
+          fullPath: dir,
+        });
+      }
+      for (const entry of entries) {
+        if (entry.isDirectory() && !ignoreDirs.has(entry.name)) {
+          walk(path.join(dir, entry.name), depth + 1);
+        }
+      }
+    };
+
+    try {
+      walk(this.workspaceRoot, 0);
+    } catch (error: any) {
+      this.log(`Error scanning sketches on disk: ${error.message}`);
+    }
     return sketches;
   }
 

@@ -16,6 +16,7 @@ import { ESPToolStrategy } from "./strategies/ESPToolStrategy.js";
 import { TeensyStrategy } from "./strategies/TeensyStrategy.js";
 import { RP2040Strategy } from "./strategies/RP2040Strategy.js";
 import { UploadLogger } from "./utils/UploadLogger.js";
+import { getProtocolConfig } from "../config/boardProtocols.js";
 
 // =============================================================================
 // UploadManager Class
@@ -122,5 +123,36 @@ export class UploadManager {
       this.log.error("Upload failed", error);
       throw error;
     }
+  }
+
+  /**
+   * Flash firmware directly to a user-selected bootloader port, skipping
+   * prepare(). Used after a BOOTLOADER_PORT_NEEDED handoff: the board has
+   * already reset into its bootloader and the user picked the new port
+   * from the browser chooser.
+   * @param {SerialPort} port - The bootloader serial port
+   * @param {ArrayBuffer|string} hexString - Firmware data
+   * @param {function} progressCallback - Progress callback (percent, status)
+   * @param {string} fqbn - Fully qualified board name
+   * @returns {Promise<void>} Resolves when flashing completes
+   * @throws {Error} If flashing fails
+   */
+  async flashToBootloader(port, hexString, progressCallback, fqbn) {
+    const strategy = this.getStrategy(fqbn);
+    if (!strategy) {
+      throw new Error(`No upload strategy found for board: ${fqbn}`);
+    }
+    // Let the strategy pick up the board-specific configuration that
+    // prepare() would normally have selected.
+    if (typeof strategy.setActiveConfig === "function") {
+      const boardConfig = getProtocolConfig(fqbn);
+      if (boardConfig) {
+        strategy.setActiveConfig(boardConfig);
+      }
+    }
+    this.log.info(
+      `Flashing directly to bootloader port with ${strategy.name || "strategy"}`,
+    );
+    await strategy.flash(port, hexString, progressCallback, fqbn);
   }
 }

@@ -5,26 +5,27 @@
       "name": "Arduino",
       "compilerPath": "/home/node/.arduino15/packages/arduino/tools/arm-none-eabi-gcc/7-2017q4/bin/arm-none-eabi-g++",
       "compilerArgs": [
-        "-mcpu=cortex-m4"
+        "-mcpu=cortex-m0plus"
       ],
       "intelliSenseMode": "gcc-arm",
       "includePath": [
         "${workspaceFolder}/**",
-        "/home/node/.arduino15/packages/arduino/hardware/renesas_uno/1.6.0/cores/arduino",
-        "/home/node/.arduino15/packages/arduino/hardware/renesas_uno/1.6.0/variants/NANOR4",
-        "/home/node/.arduino15/packages/arduino/hardware/renesas_uno/1.6.0/libraries/**",
+        "/home/node/.arduino15/packages/arduino/hardware/samd/1.8.14/cores/arduino",
+        "/home/node/.arduino15/packages/arduino/hardware/samd/1.8.14/variants/mkrwifi1010",
+        "/home/node/.arduino15/packages/arduino/hardware/samd/1.8.14/libraries/**",
         "/home/node/Arduino/libraries/**",
         "/home/node/.arduino15/packages/arduino/tools/arm-none-eabi-gcc/7-2017q4/arm-none-eabi/include"
       ],
       "forcedInclude": [
-        "/home/node/.arduino15/packages/arduino/hardware/renesas_uno/1.6.0/cores/arduino/Arduino.h"
+        "/home/node/.arduino15/packages/arduino/hardware/samd/1.8.14/cores/arduino/Arduino.h"
       ],
       "cStandard": "c11",
       "cppStandard": "c++17",
       "defines": [
         "ARDUINO=10607",
-        "ARDUINO_nanor4",
-        "ARDUINO_ARCH_RENESAS_UNO"
+        "F_CPU=48000000L",
+        "ARDUINO_SAMD_MKRWIFI1010",
+        "ARDUINO_ARCH_SAMD"
       ]
     }
   ]

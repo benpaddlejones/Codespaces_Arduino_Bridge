@@ -749,17 +749,37 @@ export class BOSSAStrategy {
     await this.perform1200Touch(port, resetDelayMs || 500);
 
     // The device may re-enumerate as a new port in bootloader mode
-    return await this.waitForBootloaderPort(port, {
+    const activePort = await this.waitForBootloaderPort(port, {
       vid,
       originalPid: pid,
       bootloaderPids,
       timeoutMs: resetDelayMs || 2500,
     });
+
+    // SAMD boards re-enumerate as a brand-new USB device (different PID)
+    // that the browser has NO Web Serial permission for yet, so the granted
+    // port poll above cannot find it. If the original app-mode port is now
+    // disconnected, continuing with it is guaranteed to fail - hand off to
+    // the UI's bootloader port chooser instead (1.1.1 behaviour).
+    if (
+      activePort === port &&
+      bootloaderPids.length > 0 &&
+      port.connected === false
+    ) {
+      const error = new Error(
+        "The board reset into its bootloader, which appears as a new USB device.",
+      );
+      error.code = "BOOTLOADER_PORT_NEEDED";
+      throw error;
+    }
+    return activePort;
   }
 
   async flash(port, data, progressCallback, fqbn) {
+    const variant =
+      this.activeConfig?.variant || this.config?.variant || "sam-ba";
     this.log.section(
-      "FLASH: Uploading Firmware to R4 WiFi via SAM-BA Protocol",
+      `FLASH: Uploading Firmware via SAM-BA Protocol (${variant})`,
     );
     this.log.info(`Firmware size: ${UploadLogger.formatSize(data.byteLength)}`);
     this.log.info(`Board FQBN: ${fqbn || "unknown"}`);
@@ -1168,12 +1188,47 @@ export class BOSSAStrategy {
       this.log.section("FLASH ERASE");
       if (progressCallback) progressCallback(12, "Erasing flash...");
 
+      const isSamdVariant = variant !== "renesas-ra4m1" && variant !== "nrf52";
+
+      // SAMD only: query bootloader version + capability flags before the
+      // erase (mirrors bossac, which only sends X# when the version string
+      // advertises it via "[Arduino:XYZ]"). Old SAM-BA bootloaders silently
+      // ignore X#, which otherwise looks identical to an erase timeout.
+      let samdCaps = null;
+      if (isSamdVariant) {
+        try {
+          this.log.command(
+            "V#",
+            "Query bootloader version + [Arduino:XYZ] capability flags",
+          );
+          await bossa.writeCommand("V#");
+          const vBytes = await bossa.readUntilTerminator({
+            timeout: 2000,
+            maxBytes: 256,
+          });
+          const vStr = bossa.bytesToPrintable(vBytes);
+          this.log.info(`Bootloader version: ${vStr || "<unreadable>"}`);
+          const capsMatch = vStr.match(/\[Arduino:([A-Z]+)\]/);
+          if (capsMatch) {
+            samdCaps = capsMatch[1];
+            this.log.info(
+              `Capabilities: ${samdCaps} (X=chip-erase, Y=buffer-write, Z=checksum)`,
+            );
+          } else {
+            this.log.warn(
+              "No [Arduino:XYZ] capability flags in version string - old bootloader; X# chip erase may be ignored",
+            );
+          }
+        } catch (e) {
+          this.log.warn(
+            "V# version query failed - proceeding without capability info",
+          );
+        }
+      }
+
       // Page size differs per family (nRF52: 4KB, Renesas: 8KB)
       const erasePageSize = variant === "nrf52" ? 0x1000 : 0x2000;
-      const eraseAddr =
-        variant === "renesas-ra4m1" || variant === "nrf52"
-          ? 0
-          : flashWriteOffset;
+      const eraseAddr = isSamdVariant ? flashWriteOffset : 0;
       const pagesToErase = Math.ceil(totalBytes / erasePageSize);
       this.log.memory(
         "ERASE",
@@ -1183,12 +1238,45 @@ export class BOSSAStrategy {
       );
       this.log.command(
         `X${eraseAddr.toString(16).padStart(8, "0")}#`,
-        "Chip erase command - erases flash from offset to end of firmware",
+        isSamdVariant
+          ? "Chip erase command - erases flash from offset to END OF FLASH (blocking, can take several seconds)"
+          : "Chip erase command - erases flash from offset to end of firmware",
       );
 
-      // Use the chipErase method which properly waits for X command ACK
-      await bossa.chipErase(eraseAddr);
-      this.log.success("Flash erased successfully");
+      if (isSamdVariant && samdCaps !== null && !samdCaps.includes("X")) {
+        // Bootloader explicitly reports no X support - skip the wait; the
+        // secure SAM-BA bootloader auto-erases on the first flash write.
+        this.log.warn(
+          "Bootloader does not advertise X (chip erase) - skipping; bootloader erases on first write",
+        );
+      } else if (isSamdVariant) {
+        // SAMD X# erases 0x2000..end-of-flash row-by-row in a blocking loop
+        // (sam_ba_monitor.c eraseFlash) - ~1000 rows on a 256KB SAMD21 can
+        // exceed 5s, so allow 10s. On timeout, CONTINUE like published 1.1.1:
+        // the bootloader is blocked mid-erase (commands are buffered by USB
+        // CDC) or is an old one that ignored X# - secure bootloaders
+        // auto-erase on the first Y#/S# write anyway.
+        const eraseAcknowledged = await bossa.chipErase(eraseAddr, 10000);
+        if (eraseAcknowledged) {
+          this.log.success("Flash erased successfully");
+        } else {
+          this.log.warn(
+            "No X# ACK - continuing anyway (matches bossac/1.1.1 behavior; erase may still be running or bootloader auto-erases on write)",
+          );
+          // Discard a late X\n\r ACK so it can't corrupt later ACK reads
+          await bossa.flush(300);
+        }
+      } else {
+        // R4 / nRF52: applet-based bootloaders ACK quickly; a missing ACK is
+        // a real failure - abort before flash write to avoid a freeze.
+        const eraseAcknowledged = await bossa.chipErase(eraseAddr);
+        if (!eraseAcknowledged) {
+          throw new Error(
+            "Bootloader did not acknowledge chip erase (X#). Upload stopped before flash write to avoid freeze.",
+          );
+        }
+        this.log.success("Flash erased successfully");
+      }
 
       // Step 3: Write flash in chunks (variant-specific write flow)
       this.log.section("FLASH WRITE");

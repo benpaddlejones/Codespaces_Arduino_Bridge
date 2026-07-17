@@ -11,6 +11,8 @@ export class BossaProtocol {
     this.writer = null;
     this.isSamd = false;
     this.log = logger || new UploadLogger("BOSSA");
+    this.commandWriteTimeoutMs = 5000;
+    this.chunkWriteTimeoutMs = 15000;
   }
 
   async connect() {
@@ -42,7 +44,7 @@ export class BossaProtocol {
         const remaining = Math.max(0, deadline - Date.now());
         const waitSlice = Math.min(remaining, 20);
         const timeoutPromise = new Promise((resolve) =>
-          setTimeout(() => resolve("timeout"), waitSlice)
+          setTimeout(() => resolve("timeout"), waitSlice),
         );
         const result = await Promise.race([this.reader.read(), timeoutPromise]);
         if (result === "timeout") continue;
@@ -56,7 +58,7 @@ export class BossaProtocol {
       this.log.info(
         `Flushed ${totalFlushed} stray byte${
           totalFlushed === 1 ? "" : "s"
-        } from serial buffer`
+        } from serial buffer`,
       );
   }
 
@@ -83,7 +85,7 @@ export class BossaProtocol {
       const remaining = Math.max(0, timeout - (Date.now() - start));
       const waitSlice = Math.min(remaining, 50);
       const timeoutPromise = new Promise((resolve) =>
-        setTimeout(() => resolve("timeout"), waitSlice)
+        setTimeout(() => resolve("timeout"), waitSlice),
       );
       const result = await Promise.race([this.reader.read(), timeoutPromise]);
       if (result === "timeout") continue;
@@ -101,7 +103,7 @@ export class BossaProtocol {
       .map((b) => b.toString(16).padStart(2, "0"))
       .join(" ");
     this.log.error(
-      `${expectedCmd}# ACK mismatch: received [${gotHex || "<empty>"}]`
+      `${expectedCmd}# ACK mismatch: received [${gotHex || "<empty>"}]`,
     );
     return false;
   }
@@ -114,7 +116,7 @@ export class BossaProtocol {
       const remaining = Math.max(0, timeout - (Date.now() - start));
       const waitSlice = Math.min(remaining, 50);
       const timeoutPromise = new Promise((resolve) =>
-        setTimeout(() => resolve("timeout"), waitSlice)
+        setTimeout(() => resolve("timeout"), waitSlice),
       );
       const result = await Promise.race([this.reader.read(), timeoutPromise]);
       if (result === "timeout") continue;
@@ -131,7 +133,21 @@ export class BossaProtocol {
 
   async writeCommand(cmd) {
     const encoder = new TextEncoder();
-    await this.writer.write(encoder.encode(cmd));
+    await this.writeWithTimeout(
+      this.writer.write(encoder.encode(cmd)),
+      this.commandWriteTimeoutMs,
+      `command ${cmd}`,
+    );
+  }
+
+  async writeWithTimeout(writePromise, timeoutMs, label) {
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`Serial write timeout (${label})`)),
+        timeoutMs,
+      ),
+    );
+    return await Promise.race([writePromise, timeoutPromise]);
   }
 
   async hello(options = {}) {
@@ -180,7 +196,7 @@ export class BossaProtocol {
       } catch (err) {
         lastError = err;
         this.log.warn(
-          `Handshake attempt ${attempt} failed: ${err.message || err}`
+          `Handshake attempt ${attempt} failed: ${err.message || err}`,
         );
         if (attempt < attempts) {
           await this.flush(100);
@@ -191,7 +207,7 @@ export class BossaProtocol {
 
     if (proceedOnFailure) {
       this.log.warn(
-        "Proceeding despite handshake failure (proceedOnFailure enabled)"
+        "Proceeding despite handshake failure (proceedOnFailure enabled)",
       );
       return "ASSUMED:Arduino Bootloader";
     }
@@ -199,22 +215,23 @@ export class BossaProtocol {
     throw lastError || new Error("Handshake failed");
   }
 
-  async chipErase(startAddr) {
+  async chipErase(startAddr, timeoutMs = 5000) {
     const addrHex = startAddr.toString(16).padStart(8, "0");
     this.log.command(
       `X${addrHex}#`,
-      "Chip erase command - bootloader erases flash pages"
+      "Chip erase command - bootloader erases flash pages",
     );
     await this.writeCommand(`X${addrHex}#`);
 
     const start = Date.now();
-    const ok = await this.readAck("X", 5000);
+    const ok = await this.readAck("X", timeoutMs);
     const ms = Date.now() - start;
     if (ok) {
       this.log.response("X# ACK", `Chip erase acknowledged in ${ms}ms`);
     } else {
       this.log.error(`Chip erase failed after ${ms}ms`);
     }
+    return ok;
   }
 
   async writeBinary(address, data) {
@@ -227,7 +244,7 @@ export class BossaProtocol {
       .join(" ");
     this.log.command(
       `S${addrHex},${sizeHex}#`,
-      `Write ${data.length} bytes to data_buffer[0x${addrHex}]`
+      `Write ${data.length} bytes to data_buffer[0x${addrHex}]`,
     );
     if (data.length)
       this.log.info(`Payload preview: ${firstBytes}... (first bytes)`);
@@ -239,10 +256,14 @@ export class BossaProtocol {
     for (let offset = 0; offset < data.length; offset += SUB_CHUNK_SIZE) {
       const subChunk = data.subarray(
         offset,
-        Math.min(offset + SUB_CHUNK_SIZE, data.length)
+        Math.min(offset + SUB_CHUNK_SIZE, data.length),
       );
       if (this.writer.ready) await this.writer.ready;
-      await this.writer.write(subChunk);
+      await this.writeWithTimeout(
+        this.writer.write(subChunk),
+        this.chunkWriteTimeoutMs,
+        `data chunk @ 0x${(address + offset).toString(16)}`,
+      );
     }
 
     const transmitTimeMs = Math.ceil((data.length * 10 * 1000) / 230400);
@@ -258,7 +279,7 @@ export class BossaProtocol {
     if (ack1) {
       this.log.response(
         `Y${srcHex},0# ACK`,
-        `Source buffer pointer accepted in ${ySrcElapsed}ms`
+        `Source buffer pointer accepted in ${ySrcElapsed}ms`,
       );
     } else {
       this.log.error(`Y${srcHex},0# failed after ${ySrcElapsed}ms`);
@@ -275,7 +296,7 @@ export class BossaProtocol {
     if (ack2) {
       this.log.response(
         `Y${dstHex},${sizeHex}# ACK`,
-        `Copied ${size} bytes to flash in ${yFlashElapsed}ms`
+        `Copied ${size} bytes to flash in ${yFlashElapsed}ms`,
       );
     } else {
       this.log.error(`Y${dstHex},${sizeHex}# failed after ${yFlashElapsed}ms`);
@@ -301,7 +322,7 @@ export class BossaProtocol {
     const addrHex = address.toString(16).padStart(8, "0");
     this.log.command(
       `G${addrHex}#`,
-      `Execute application starting at ${UploadLogger.formatAddr(address)}`
+      `Execute application starting at ${UploadLogger.formatAddr(address)}`,
     );
     await this.writeCommand(`G${addrHex}#`);
   }
@@ -338,7 +359,7 @@ export class BossaProtocol {
         throw new Error(`Timeout (got ${offset}/${count})`);
       const remainingTime = timeout - (Date.now() - startTime);
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout")), remainingTime)
+        setTimeout(() => reject(new Error("Timeout")), remainingTime),
       );
       const { value, done } = await Promise.race([
         this.reader.read(),
@@ -402,8 +423,8 @@ export class BossaProtocol {
     this.log.command(
       `Z${addrHex},${sizeHex}#`,
       `Verify ${UploadLogger.formatSize(size)} at ${UploadLogger.formatAddr(
-        address
-      )} using device CRC`
+        address,
+      )} using device CRC`,
     );
     await this.delay(100);
     await this.flush(50);
@@ -419,13 +440,13 @@ export class BossaProtocol {
         .replace(/\n/g, "<LF>");
       this.log.response(
         `Z response: "${cleanedResponse}"`,
-        "Device-supplied CRC digest"
+        "Device-supplied CRC digest",
       );
       const match = responseStr.match(/Z([0-9A-Fa-f]{8})#/);
       if (!match) {
         this.log.error(
           "CRC verification failed",
-          "SAM-BA response did not include CRC value"
+          "SAM-BA response did not include CRC value",
         );
         return false;
       }
@@ -436,7 +457,7 @@ export class BossaProtocol {
           .toString(16)
           .padStart(4, "0")}, Expected: 0x${expectedCRC
           .toString(16)
-          .padStart(4, "0")}`
+          .padStart(4, "0")}`,
       );
       const crcMatch = flashCRC === expectedCRC;
       if (crcMatch) {
@@ -448,7 +469,7 @@ export class BossaProtocol {
             .toString(16)
             .padStart(4, "0")} but expected 0x${expectedCRC
             .toString(16)
-            .padStart(4, "0")}`
+            .padStart(4, "0")}`,
         );
       }
       return crcMatch;

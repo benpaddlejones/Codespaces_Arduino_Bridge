@@ -93,9 +93,9 @@ export const BOSSA_RENESAS_CONFIG = {
     sramBufferOffset: 0x34, // Offset in bootloader's data_buffer
   },
 
-  // Bootloader PIDs (different from application PIDs)
-  // Note: R4 Minima-family PIDs moved to the DFU configs below.
-  bootloaderPids: [0x006d, 0x0054, 0x0057],
+  // Bootloader PID for the R4 WiFi (ESP32-S3 bridge in SAM-BA mode).
+  // SAMD boards define their own bootloader PIDs via makeSamd21Config().
+  bootloaderPids: [0x006d],
 };
 
 /**
@@ -296,6 +296,28 @@ export const DFU_MBED_OPTA_CONFIG = makeDfuConfig({
 });
 
 /**
+ * Build a SAM-BA configuration for SAMD21 boards (MKR family, Nano 33 IoT,
+ * Zero). Same wire protocol as the R4 WiFi but with the SAMD21 memory
+ * layout (8KB bootloader at 0x0000, sketch at 0x2000) and per-board USB
+ * bootloader PIDs (bootloader PID = application PID - 0x8000, per
+ * ArduinoCore-samd boards.txt).
+ * @param {number[]} bootloaderPids - Bootloader product IDs for the board
+ * @returns {object} BOSSA protocol configuration
+ */
+function makeSamd21Config(bootloaderPids) {
+  return {
+    ...BOSSA_RENESAS_CONFIG,
+    variant: "samd21",
+    memory: {
+      ...BOSSA_RENESAS_CONFIG.memory,
+      chunkSize: 4096,
+      sketchOffset: 0x2000,
+    },
+    bootloaderPids,
+  };
+}
+
+/**
  * Board to Protocol mapping
  */
 export const BOARD_PROTOCOL_MAP = {
@@ -325,25 +347,13 @@ export const BOARD_PROTOCOL_MAP = {
   "arduino:mbed_nicla:nicla_vision": DFU_NICLA_VISION_CONFIG,
   "arduino:mbed_opta:opta": DFU_MBED_OPTA_CONFIG,
 
-  // SAMD boards - also BOSSA but different variant
-  "arduino:samd:mkr1000": {
-    ...BOSSA_RENESAS_CONFIG,
-    variant: "samd21",
-    memory: {
-      ...BOSSA_RENESAS_CONFIG.memory,
-      chunkSize: 4096,
-      sketchOffset: 0x2000,
-    },
-  },
-  "arduino:samd:nano_33_iot": {
-    ...BOSSA_RENESAS_CONFIG,
-    variant: "samd21",
-    memory: {
-      ...BOSSA_RENESAS_CONFIG.memory,
-      chunkSize: 4096,
-      sketchOffset: 0x2000,
-    },
-  },
+  // SAMD21 boards - same SAM-BA protocol, SAMD21 memory layout, per-board
+  // bootloader PIDs from ArduinoCore-samd boards.txt (boot = app - 0x8000)
+  "arduino:samd:mkr1000": makeSamd21Config([0x004e, 0x024e]),
+  "arduino:samd:mkrzero": makeSamd21Config([0x004f]),
+  "arduino:samd:mkrwifi1010": makeSamd21Config([0x0054]),
+  "arduino:samd:nano_33_iot": makeSamd21Config([0x0057]),
+  "arduino:samd:arduino_zero_native": makeSamd21Config([0x004d, 0x024d]),
 
   // mbed boards - BOSSA variant
   "arduino:mbed_nano:nano33ble": BOSSA_NRF52_CONFIG,

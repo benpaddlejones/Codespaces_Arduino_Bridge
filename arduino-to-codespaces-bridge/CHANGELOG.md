@@ -5,6 +5,61 @@ All notable changes to the "Arduino to Codespaces Bridge" extension will be docu
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.33] - 2026-07-17
+
+### Fixed
+
+- SAMD21 (MKR WiFi 1010 etc.) upload no longer aborts when the bootloader
+  does not ACK the X# chip erase within the timeout. Restores the published
+  1.1.1 behavior of continuing to the flash write:
+  - The official SAM-BA bootloader (sam_ba_monitor.c) erases from the given
+    offset to the END of flash in a blocking busy-loop - on a 256KB SAMD21
+    this can exceed 5s, so the X\n\r ACK may simply arrive late. Erase
+    timeout raised to 10s for SAMD.
+  - Old bootloaders silently ignore X#; secure bootloaders auto-erase on the
+    first flash write (erased_from check in the Y handler), so continuing is
+    safe in every case. A warning is logged instead of a hard failure.
+  - The hard abort is kept for the applet-based R4 WiFi / Nano 33 BLE flows,
+    where a missing X# ACK is a genuine failure.
+
+### Added
+
+- SAMD upload now queries V# before erasing (mirrors bossac) and logs the
+  bootloader version string plus its [Arduino:XYZ] capability flags
+  (X=chip-erase, Y=buffer-write, Z=checksum). If the bootloader explicitly
+  reports no X support the erase wait is skipped entirely.
+
+## [1.2.31] - 2026-07-17
+
+### Fixed
+
+- MKR WiFi 1010 (and other SAMD21 boards) upload: separation of board-family
+  policy from the shared SAM-BA protocol engine.
+  - Per-board SAMD21 configs (MKR WiFi 1010, MKR1000, MKR Zero, Nano 33
+    IoT, Zero) with the correct bootloader PIDs from ArduinoCore-samd
+    boards.txt (bootloader PID = application PID - 0x8000); previously
+    mkrwifi1010 silently inherited the R4 WiFi configuration.
+  - After the 1200 baud touch, SAMD boards re-enumerate as a NEW USB device
+    the browser has no Web Serial permission for. When the app-mode port is
+    disconnected and no granted bootloader port is found, the strategy now
+    raises the bootloader port chooser (restored 1.1.1 behaviour) instead of
+    retrying the dead port at every baud rate.
+  - Restored `UploadManager.flashToBootloader()`, which the chooser handoff
+    calls but had been lost in the 1.1.x source recovery.
+  - Flash log header now names the actual protocol variant instead of
+    always saying "R4 WiFi".
+
+## [1.2.30] - 2026-07-17
+
+### Fixed
+
+- Sketch dropdown could be empty on first page load right after the
+  extension started: the server's sketch listing relies on VS Code's
+  workspace file index (`findFiles`), which returns no results until the
+  index has warmed up. The server now falls back to a direct filesystem
+  scan of the workspace (same ignore rules, depth-limited) whenever the
+  index returns nothing, so the list is populated immediately.
+
 ## [1.2.29] - 2026-07-17
 
 ### Changed
