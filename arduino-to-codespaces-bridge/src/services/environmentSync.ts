@@ -38,6 +38,11 @@ const JSON_HEADERS = {
   "Content-Type": "application/json",
 };
 
+/**
+ * Keeps the installed Arduino platforms and libraries in sync with the
+ * workspace `arduino-requirements.txt` config file, reacting to file changes
+ * and server lifecycle events.
+ */
 export class EnvironmentSyncController {
   private syncing = false;
   private pending = false;
@@ -111,6 +116,11 @@ export class EnvironmentSyncController {
     await this.syncInternal(true);
   }
 
+  /**
+   * Run a single sync pass: read the config, then install anything missing.
+   *
+   * @param force When true, log a message if the server is not yet running.
+   */
   private async syncInternal(force: boolean = false): Promise<void> {
     if (this.syncing) {
       this.pending = true;
@@ -157,6 +167,12 @@ export class EnvironmentSyncController {
     }
   }
 
+  /**
+   * Install any platforms and libraries required by the config that are not
+   * already present, showing progress to the user.
+   *
+   * @param config The parsed environment configuration to apply.
+   */
   private async applyConfig(config: EnvironmentConfig): Promise<void> {
     const port = this.server.getPort();
 
@@ -258,6 +274,12 @@ export class EnvironmentSyncController {
     );
   }
 
+  /**
+   * Query the running server for the currently installed board platforms.
+   *
+   * @param port Port the bridge server is listening on.
+   * @returns Installed platforms, or an empty array on failure.
+   */
   private async fetchInstalledPlatforms(
     port: number,
   ): Promise<Array<{ id: string; installedVersion?: string | null }>> {
@@ -283,6 +305,12 @@ export class EnvironmentSyncController {
     }
   }
 
+  /**
+   * Query the running server for the currently installed libraries.
+   *
+   * @param port Port the bridge server is listening on.
+   * @returns Installed libraries, or an empty array on failure.
+   */
   private async fetchInstalledLibraries(
     port: number,
   ): Promise<Array<{ name: string; installedVersion?: string | null }>> {
@@ -308,6 +336,13 @@ export class EnvironmentSyncController {
     }
   }
 
+  /**
+   * Install a single board platform via the server API.
+   *
+   * @param port Port the bridge server is listening on.
+   * @param platform The platform requirement to install.
+   * @returns Null on success, otherwise an error message.
+   */
   private async installPlatform(
     port: number,
     platform: PlatformRequirement,
@@ -353,6 +388,13 @@ export class EnvironmentSyncController {
     }
   }
 
+  /**
+   * Install a single library via the server API.
+   *
+   * @param port Port the bridge server is listening on.
+   * @param library The library requirement to install.
+   * @returns Null on success, otherwise an error message.
+   */
   private async installLibrary(
     port: number,
     library: LibraryRequirement,
@@ -399,6 +441,13 @@ export class EnvironmentSyncController {
     }
   }
 
+  /**
+   * Determine whether an installed platform satisfies a requirement.
+   *
+   * @param requirement The required platform (with optional version).
+   * @param installed The list of installed platforms.
+   * @returns True if the requirement is satisfied.
+   */
   private isPlatformSatisfied(
     requirement: PlatformRequirement,
     installed: Array<{ id: string; installedVersion?: string | null }>,
@@ -416,6 +465,13 @@ export class EnvironmentSyncController {
     });
   }
 
+  /**
+   * Determine whether an installed library satisfies a requirement.
+   *
+   * @param requirement The required library (with optional version).
+   * @param installed The list of installed libraries.
+   * @returns True if the requirement is satisfied.
+   */
   private isLibrarySatisfied(
     requirement: LibraryRequirement,
     installed: Array<{ name: string; installedVersion?: string | null }>,

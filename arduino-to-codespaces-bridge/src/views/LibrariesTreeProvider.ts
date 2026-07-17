@@ -18,7 +18,7 @@ class LibraryItem extends vscode.TreeItem {
     public readonly label: string,
     public readonly installedVersion: string | null,
     public readonly latestVersion: string | null,
-    public readonly location: string | null
+    public readonly location: string | null,
   ) {
     super(label, vscode.TreeItemCollapsibleState.None);
     this.description = installedVersion
@@ -41,7 +41,7 @@ class LibraryItem extends vscode.TreeItem {
     this.iconPath = new vscode.ThemeIcon(
       latestVersion && installedVersion && latestVersion !== installedVersion
         ? "arrow-circle-up"
-        : "book"
+        : "book",
     );
     this.contextValue = "library";
   }
@@ -63,9 +63,7 @@ type LibrariesTreeItem = LibraryItem | InfoItem;
 /**
  * Provides data for the libraries view
  */
-export class LibrariesTreeProvider
-  implements vscode.TreeDataProvider<LibrariesTreeItem>
-{
+export class LibrariesTreeProvider implements vscode.TreeDataProvider<LibrariesTreeItem> {
   private _onDidChangeTreeData = new vscode.EventEmitter<
     LibrariesTreeItem | undefined | null | void
   >();
@@ -96,7 +94,7 @@ export class LibrariesTreeProvider
       return [
         new InfoItem(
           "Bridge server is not running. Start the server to load libraries.",
-          "plug"
+          "plug",
         ),
       ];
     }
@@ -112,11 +110,15 @@ export class LibrariesTreeProvider
     return this.libraries;
   }
 
+  /**
+   * Fetch the installed libraries from the running server and cache them for
+   * the tree view.
+   */
   private async loadLibraries(): Promise<void> {
     try {
       const port = this.server.getPort();
       const response = await fetch(
-        `http://localhost:${port}/api/cli/libraries/installed`
+        `http://localhost:${port}/api/cli/libraries/installed`,
       );
       const data = (await response.json()) as {
         success: boolean;
@@ -139,13 +141,13 @@ export class LibrariesTreeProvider
               lib.name,
               lib.installedVersion ?? null,
               lib.latestVersion ?? null,
-              lib.location ?? null
-            )
+              lib.location ?? null,
+            ),
         )
         .sort((a, b) => a.label.localeCompare(b.label));
     } catch (error: any) {
       vscode.window.showWarningMessage(
-        `Failed to load libraries: ${error.message}`
+        `Failed to load libraries: ${error.message}`,
       );
       this.libraries = [];
     }

@@ -62,7 +62,8 @@ const rel = (p) => path.relative(EXTENSION_ROOT, p);
 
 /**
  * Return true if the non-blank line immediately above `index` closes a JSDoc
- * block comment (`*/`). Decorator lines (@Something) are skipped.
+ * block comment (ends with a star-slash). Decorator lines (@Something) are
+ * skipped.
  */
 function hasJsDocAbove(lines, index) {
   let i = index - 1;
@@ -273,8 +274,13 @@ const contributedCommands = (pkg.contributes?.commands || []).map(
   (c) => c.command,
 );
 const allSrc = tsFiles.map((f) => fs.readFileSync(f, "utf8")).join("\n");
+// Collapse whitespace after registerCommand( so multi-line calls still match.
+const normalizedSrc = allSrc.replace(
+  /registerCommand\(\s*/g,
+  "registerCommand(",
+);
 const unregistered = contributedCommands.filter(
-  (id) => !allSrc.includes(`registerCommand("${id}"`),
+  (id) => !normalizedSrc.includes(`registerCommand("${id}"`),
 );
 ok(
   "every contributed command is registered in code",

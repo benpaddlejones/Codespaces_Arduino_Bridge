@@ -30,22 +30,26 @@ import * as path from "path";
 // Simple write lock to prevent concurrent file writes
 let writeLock: Promise<void> = Promise.resolve();
 
+/** A board platform (core) requirement with an optional pinned version. */
 export interface PlatformRequirement {
   id: string;
   version?: string | null;
 }
 
+/** A library requirement with an optional pinned version. */
 export interface LibraryRequirement {
   name: string;
   version?: string | null;
 }
 
+/** The parsed environment configuration: required platforms and libraries. */
 export interface EnvironmentConfig {
   version: number;
   platforms: PlatformRequirement[];
   libraries: LibraryRequirement[];
 }
 
+/** File name of the environment requirements config stored in the workspace. */
 export const CONFIG_FILE_NAME = "arduino-requirements.txt";
 const LEGACY_CONFIG_FILE_NAME = "arduino-bridge.config.json";
 
@@ -158,6 +162,12 @@ export async function writeEnvironmentConfig(
   await writeConfigFile(configPath, config);
 }
 
+/**
+ * Build the absolute path to the environment config file for a workspace.
+ *
+ * @param workspaceRoot Absolute path to the workspace root directory.
+ * @returns Absolute path to the config file.
+ */
 export function getConfigPath(workspaceRoot: string): string {
   return path.join(workspaceRoot, CONFIG_FILE_NAME);
 }

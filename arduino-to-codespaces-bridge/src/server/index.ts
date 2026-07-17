@@ -390,6 +390,13 @@ export class BridgeServer extends EventEmitter {
     };
   }
 
+  /**
+   * Compare two dotted version strings numerically.
+   *
+   * @param a First version string.
+   * @param b Second version string.
+   * @returns Negative if a < b, positive if a > b, zero if equal.
+   */
   private compareVersions(a: string, b: string): number {
     const partsA = a.split(".").map((value) => parseInt(value, 10) || 0);
     const partsB = b.split(".").map((value) => parseInt(value, 10) || 0);
@@ -404,6 +411,12 @@ export class BridgeServer extends EventEmitter {
     return 0;
   }
 
+  /**
+   * Normalize a raw arduino-cli platform record into the shape used by the UI.
+   *
+   * @param platform Raw platform object from arduino-cli JSON output.
+   * @returns The transformed platform, or the input unchanged if falsy.
+   */
   private transformPlatform(platform: any): any {
     if (!platform) {
       return platform;
@@ -438,6 +451,12 @@ export class BridgeServer extends EventEmitter {
     };
   }
 
+  /**
+   * Normalize a raw arduino-cli library record into the shape used by the UI.
+   *
+   * @param library Raw library object from arduino-cli JSON output.
+   * @returns The transformed library, or the input unchanged if falsy.
+   */
   private transformLibrary(library: any): any {
     if (!library) {
       return library;
@@ -467,6 +486,12 @@ export class BridgeServer extends EventEmitter {
     };
   }
 
+  /**
+   * Translate a raw arduino-cli error log into a concise, user-friendly message.
+   *
+   * @param log Raw error output from arduino-cli.
+   * @returns A human-readable error message.
+   */
   private parseCliError(log: string): string {
     if (!log) {
       return "Command failed";
@@ -498,6 +523,12 @@ export class BridgeServer extends EventEmitter {
     return log.trim();
   }
 
+  /**
+   * Return the additional board manager URLs configured in arduino-cli, using a
+   * cached value if the CLI call fails.
+   *
+   * @returns The list of additional board manager URLs.
+   */
   private async getAdditionalBoardUrls(): Promise<string[]> {
     const result = await this.runCliCommand(["config", "dump"], {
       addJson: true,
@@ -1757,6 +1788,13 @@ export class BridgeServer extends EventEmitter {
   // Server Lifecycle
   // =========================================================================
 
+  /**
+   * Ensure the given port is free, terminating any conflicting processes with
+   * SIGTERM and then SIGKILL if necessary.
+   *
+   * @param port The port that must be made available.
+   * @throws If the port cannot be freed.
+   */
   private async ensurePortAvailable(port: number): Promise<void> {
     const conflicting = (await this.findProcessesUsingPort(port)).filter(
       (pid) => pid !== process.pid && pid > 0,
@@ -1809,6 +1847,12 @@ export class BridgeServer extends EventEmitter {
     }
   }
 
+  /**
+   * Find the PIDs of processes currently listening on the given TCP port.
+   *
+   * @param port The TCP port to inspect.
+   * @returns The list of process IDs using the port.
+   */
   private findProcessesUsingPort(port: number): Promise<number[]> {
     return new Promise((resolve) => {
       const command =
@@ -1851,6 +1895,12 @@ export class BridgeServer extends EventEmitter {
     });
   }
 
+  /**
+   * Send a termination signal to a process, ignoring the current process.
+   *
+   * @param pid The target process ID.
+   * @param signal The signal to send (e.g. SIGTERM or SIGKILL).
+   */
   private async terminateProcess(
     pid: number,
     signal: NodeJS.Signals,
@@ -1869,6 +1919,12 @@ export class BridgeServer extends EventEmitter {
     }
   }
 
+  /**
+   * Resolve after the given number of milliseconds.
+   *
+   * @param ms Delay duration in milliseconds.
+   * @returns A promise that resolves once the delay elapses.
+   */
   private delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }

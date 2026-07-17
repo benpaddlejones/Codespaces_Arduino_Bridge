@@ -11,11 +11,13 @@
 
 import * as path from "path";
 
+/** Options that influence how an IntelliSense configuration is generated. */
 export interface IntelliSenseBuildOptions {
   /** Home directory used for the user sketchbook libraries path */
   homeDir: string;
 }
 
+/** A single c_cpp_properties.json configuration entry. */
 export interface IntelliSenseConfiguration {
   name: string;
   compilerPath?: string;
@@ -28,6 +30,7 @@ export interface IntelliSenseConfiguration {
   defines: string[];
 }
 
+/** The full c_cpp_properties.json file shape produced for the workspace. */
 export interface IntelliSenseConfigFile {
   version: number;
   configurations: IntelliSenseConfiguration[];
