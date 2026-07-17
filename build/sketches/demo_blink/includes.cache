@@ -1,0 +1,52 @@
+[
+  {
+    "added_include_path": "/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino"
+  },
+  {
+    "added_include_path": "/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE"
+  },
+  {
+    "compile": {
+      "source_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_blink/sketch/demo_blink.ino.cpp",
+      "object_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_blink/sketch/demo_blink.ino.cpp.o",
+      "depfile_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_blink/sketch/demo_blink.ino.cpp.d"
+    },
+    "compile_task": {
+      "args": [
+        "/home/node/.arduino15/packages/arduino/tools/arm-none-eabi-gcc/7-2017q4/bin/arm-none-eabi-g++",
+        "-c",
+        "-w",
+        "-g3",
+        "-nostdlib",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/defines.txt",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/cxxflags.txt",
+        "-DARDUINO_ARCH_NRF52840",
+        "-mcpu=cortex-m4",
+        "-mfloat-abi=softfp",
+        "-mfpu=fpv4-sp-d16",
+        "-w",
+        "-x",
+        "c++",
+        "-E",
+        "-CC",
+        "-DARDUINO=10607",
+        "-DARDUINO_ARDUINO_NANO33BLE",
+        "-DARDUINO_ARCH_MBED_NANO",
+        "-DARDUINO_ARCH_MBED",
+        "-DARDUINO_LIBRARY_DISCOVERY_PHASE=1",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino/api/deprecated",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino/api/deprecated-avr-comp",
+        "-iprefix/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/includes.txt",
+        "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_blink/sketch/demo_blink.ino.cpp",
+        "-o",
+        "/dev/null"
+      ]
+    }
+  },
+  {
+    "missing_include_h": ""
+  }
+]

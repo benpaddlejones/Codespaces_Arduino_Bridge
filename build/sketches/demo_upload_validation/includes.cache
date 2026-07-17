@@ -1,0 +1,595 @@
+[
+  {
+    "added_include_path": "/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino"
+  },
+  {
+    "added_include_path": "/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE"
+  },
+  {
+    "compile": {
+      "source_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/sketch/demo_upload_validation.ino.cpp",
+      "object_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/sketch/demo_upload_validation.ino.cpp.o",
+      "depfile_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/sketch/demo_upload_validation.ino.cpp.d"
+    },
+    "compile_task": {
+      "args": [
+        "/home/node/.arduino15/packages/arduino/tools/arm-none-eabi-gcc/7-2017q4/bin/arm-none-eabi-g++",
+        "-c",
+        "-w",
+        "-g3",
+        "-nostdlib",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/defines.txt",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/cxxflags.txt",
+        "-DARDUINO_ARCH_NRF52840",
+        "-mcpu=cortex-m4",
+        "-mfloat-abi=softfp",
+        "-mfpu=fpv4-sp-d16",
+        "-w",
+        "-x",
+        "c++",
+        "-E",
+        "-CC",
+        "-DARDUINO=10607",
+        "-DARDUINO_ARDUINO_NANO33BLE",
+        "-DARDUINO_ARCH_MBED_NANO",
+        "-DARDUINO_ARCH_MBED",
+        "-DARDUINO_LIBRARY_DISCOVERY_PHASE=1",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino/api/deprecated",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino/api/deprecated-avr-comp",
+        "-iprefix/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/includes.txt",
+        "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/sketch/demo_upload_validation.ino.cpp",
+        "-o",
+        "/dev/null"
+      ]
+    }
+  },
+  {
+    "missing_include_h": "Servo.h"
+  },
+  {
+    "added_include_path": "/home/node/Arduino/libraries/Servo/src"
+  },
+  {
+    "compile": {
+      "source_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/sketch/demo_upload_validation.ino.cpp",
+      "object_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/sketch/demo_upload_validation.ino.cpp.o",
+      "depfile_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/sketch/demo_upload_validation.ino.cpp.d"
+    },
+    "compile_task": {
+      "args": [
+        "/home/node/.arduino15/packages/arduino/tools/arm-none-eabi-gcc/7-2017q4/bin/arm-none-eabi-g++",
+        "-c",
+        "-w",
+        "-g3",
+        "-nostdlib",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/defines.txt",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/cxxflags.txt",
+        "-DARDUINO_ARCH_NRF52840",
+        "-mcpu=cortex-m4",
+        "-mfloat-abi=softfp",
+        "-mfpu=fpv4-sp-d16",
+        "-w",
+        "-x",
+        "c++",
+        "-E",
+        "-CC",
+        "-DARDUINO=10607",
+        "-DARDUINO_ARDUINO_NANO33BLE",
+        "-DARDUINO_ARCH_MBED_NANO",
+        "-DARDUINO_ARCH_MBED",
+        "-DARDUINO_LIBRARY_DISCOVERY_PHASE=1",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE",
+        "-I/home/node/Arduino/libraries/Servo/src",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino/api/deprecated",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino/api/deprecated-avr-comp",
+        "-iprefix/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/includes.txt",
+        "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/sketch/demo_upload_validation.ino.cpp",
+        "-o",
+        "/dev/null"
+      ]
+    }
+  },
+  {
+    "missing_include_h": ""
+  },
+  {
+    "compile": {
+      "source_path": "/home/node/Arduino/libraries/Servo/src/avr/Servo.cpp",
+      "object_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/libraries/Servo/avr/Servo.cpp.o",
+      "depfile_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/libraries/Servo/avr/Servo.cpp.d"
+    },
+    "compile_task": {
+      "args": [
+        "/home/node/.arduino15/packages/arduino/tools/arm-none-eabi-gcc/7-2017q4/bin/arm-none-eabi-g++",
+        "-c",
+        "-w",
+        "-g3",
+        "-nostdlib",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/defines.txt",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/cxxflags.txt",
+        "-DARDUINO_ARCH_NRF52840",
+        "-mcpu=cortex-m4",
+        "-mfloat-abi=softfp",
+        "-mfpu=fpv4-sp-d16",
+        "-w",
+        "-x",
+        "c++",
+        "-E",
+        "-CC",
+        "-DARDUINO=10607",
+        "-DARDUINO_ARDUINO_NANO33BLE",
+        "-DARDUINO_ARCH_MBED_NANO",
+        "-DARDUINO_ARCH_MBED",
+        "-DARDUINO_LIBRARY_DISCOVERY_PHASE=1",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE",
+        "-I/home/node/Arduino/libraries/Servo/src",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino/api/deprecated",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino/api/deprecated-avr-comp",
+        "-iprefix/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/includes.txt",
+        "/home/node/Arduino/libraries/Servo/src/avr/Servo.cpp",
+        "-o",
+        "/dev/null"
+      ]
+    }
+  },
+  {
+    "missing_include_h": ""
+  },
+  {
+    "compile": {
+      "source_path": "/home/node/Arduino/libraries/Servo/src/esp32/Servo.cpp",
+      "object_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/libraries/Servo/esp32/Servo.cpp.o",
+      "depfile_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/libraries/Servo/esp32/Servo.cpp.d"
+    },
+    "compile_task": {
+      "args": [
+        "/home/node/.arduino15/packages/arduino/tools/arm-none-eabi-gcc/7-2017q4/bin/arm-none-eabi-g++",
+        "-c",
+        "-w",
+        "-g3",
+        "-nostdlib",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/defines.txt",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/cxxflags.txt",
+        "-DARDUINO_ARCH_NRF52840",
+        "-mcpu=cortex-m4",
+        "-mfloat-abi=softfp",
+        "-mfpu=fpv4-sp-d16",
+        "-w",
+        "-x",
+        "c++",
+        "-E",
+        "-CC",
+        "-DARDUINO=10607",
+        "-DARDUINO_ARDUINO_NANO33BLE",
+        "-DARDUINO_ARCH_MBED_NANO",
+        "-DARDUINO_ARCH_MBED",
+        "-DARDUINO_LIBRARY_DISCOVERY_PHASE=1",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE",
+        "-I/home/node/Arduino/libraries/Servo/src",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino/api/deprecated",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino/api/deprecated-avr-comp",
+        "-iprefix/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/includes.txt",
+        "/home/node/Arduino/libraries/Servo/src/esp32/Servo.cpp",
+        "-o",
+        "/dev/null"
+      ]
+    }
+  },
+  {
+    "missing_include_h": ""
+  },
+  {
+    "compile": {
+      "source_path": "/home/node/Arduino/libraries/Servo/src/mbed/Servo.cpp",
+      "object_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/libraries/Servo/mbed/Servo.cpp.o",
+      "depfile_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/libraries/Servo/mbed/Servo.cpp.d"
+    },
+    "compile_task": {
+      "args": [
+        "/home/node/.arduino15/packages/arduino/tools/arm-none-eabi-gcc/7-2017q4/bin/arm-none-eabi-g++",
+        "-c",
+        "-w",
+        "-g3",
+        "-nostdlib",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/defines.txt",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/cxxflags.txt",
+        "-DARDUINO_ARCH_NRF52840",
+        "-mcpu=cortex-m4",
+        "-mfloat-abi=softfp",
+        "-mfpu=fpv4-sp-d16",
+        "-w",
+        "-x",
+        "c++",
+        "-E",
+        "-CC",
+        "-DARDUINO=10607",
+        "-DARDUINO_ARDUINO_NANO33BLE",
+        "-DARDUINO_ARCH_MBED_NANO",
+        "-DARDUINO_ARCH_MBED",
+        "-DARDUINO_LIBRARY_DISCOVERY_PHASE=1",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE",
+        "-I/home/node/Arduino/libraries/Servo/src",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino/api/deprecated",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino/api/deprecated-avr-comp",
+        "-iprefix/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/includes.txt",
+        "/home/node/Arduino/libraries/Servo/src/mbed/Servo.cpp",
+        "-o",
+        "/dev/null"
+      ]
+    }
+  },
+  {
+    "missing_include_h": ""
+  },
+  {
+    "compile": {
+      "source_path": "/home/node/Arduino/libraries/Servo/src/megaavr/Servo.cpp",
+      "object_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/libraries/Servo/megaavr/Servo.cpp.o",
+      "depfile_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/libraries/Servo/megaavr/Servo.cpp.d"
+    },
+    "compile_task": {
+      "args": [
+        "/home/node/.arduino15/packages/arduino/tools/arm-none-eabi-gcc/7-2017q4/bin/arm-none-eabi-g++",
+        "-c",
+        "-w",
+        "-g3",
+        "-nostdlib",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/defines.txt",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/cxxflags.txt",
+        "-DARDUINO_ARCH_NRF52840",
+        "-mcpu=cortex-m4",
+        "-mfloat-abi=softfp",
+        "-mfpu=fpv4-sp-d16",
+        "-w",
+        "-x",
+        "c++",
+        "-E",
+        "-CC",
+        "-DARDUINO=10607",
+        "-DARDUINO_ARDUINO_NANO33BLE",
+        "-DARDUINO_ARCH_MBED_NANO",
+        "-DARDUINO_ARCH_MBED",
+        "-DARDUINO_LIBRARY_DISCOVERY_PHASE=1",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE",
+        "-I/home/node/Arduino/libraries/Servo/src",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino/api/deprecated",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino/api/deprecated-avr-comp",
+        "-iprefix/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/includes.txt",
+        "/home/node/Arduino/libraries/Servo/src/megaavr/Servo.cpp",
+        "-o",
+        "/dev/null"
+      ]
+    }
+  },
+  {
+    "missing_include_h": ""
+  },
+  {
+    "compile": {
+      "source_path": "/home/node/Arduino/libraries/Servo/src/nrf52/Servo.cpp",
+      "object_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/libraries/Servo/nrf52/Servo.cpp.o",
+      "depfile_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/libraries/Servo/nrf52/Servo.cpp.d"
+    },
+    "compile_task": {
+      "args": [
+        "/home/node/.arduino15/packages/arduino/tools/arm-none-eabi-gcc/7-2017q4/bin/arm-none-eabi-g++",
+        "-c",
+        "-w",
+        "-g3",
+        "-nostdlib",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/defines.txt",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/cxxflags.txt",
+        "-DARDUINO_ARCH_NRF52840",
+        "-mcpu=cortex-m4",
+        "-mfloat-abi=softfp",
+        "-mfpu=fpv4-sp-d16",
+        "-w",
+        "-x",
+        "c++",
+        "-E",
+        "-CC",
+        "-DARDUINO=10607",
+        "-DARDUINO_ARDUINO_NANO33BLE",
+        "-DARDUINO_ARCH_MBED_NANO",
+        "-DARDUINO_ARCH_MBED",
+        "-DARDUINO_LIBRARY_DISCOVERY_PHASE=1",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE",
+        "-I/home/node/Arduino/libraries/Servo/src",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino/api/deprecated",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino/api/deprecated-avr-comp",
+        "-iprefix/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/includes.txt",
+        "/home/node/Arduino/libraries/Servo/src/nrf52/Servo.cpp",
+        "-o",
+        "/dev/null"
+      ]
+    }
+  },
+  {
+    "missing_include_h": ""
+  },
+  {
+    "compile": {
+      "source_path": "/home/node/Arduino/libraries/Servo/src/renesas/Servo.cpp",
+      "object_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/libraries/Servo/renesas/Servo.cpp.o",
+      "depfile_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/libraries/Servo/renesas/Servo.cpp.d"
+    },
+    "compile_task": {
+      "args": [
+        "/home/node/.arduino15/packages/arduino/tools/arm-none-eabi-gcc/7-2017q4/bin/arm-none-eabi-g++",
+        "-c",
+        "-w",
+        "-g3",
+        "-nostdlib",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/defines.txt",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/cxxflags.txt",
+        "-DARDUINO_ARCH_NRF52840",
+        "-mcpu=cortex-m4",
+        "-mfloat-abi=softfp",
+        "-mfpu=fpv4-sp-d16",
+        "-w",
+        "-x",
+        "c++",
+        "-E",
+        "-CC",
+        "-DARDUINO=10607",
+        "-DARDUINO_ARDUINO_NANO33BLE",
+        "-DARDUINO_ARCH_MBED_NANO",
+        "-DARDUINO_ARCH_MBED",
+        "-DARDUINO_LIBRARY_DISCOVERY_PHASE=1",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE",
+        "-I/home/node/Arduino/libraries/Servo/src",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino/api/deprecated",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino/api/deprecated-avr-comp",
+        "-iprefix/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/includes.txt",
+        "/home/node/Arduino/libraries/Servo/src/renesas/Servo.cpp",
+        "-o",
+        "/dev/null"
+      ]
+    }
+  },
+  {
+    "missing_include_h": ""
+  },
+  {
+    "compile": {
+      "source_path": "/home/node/Arduino/libraries/Servo/src/sam/Servo.cpp",
+      "object_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/libraries/Servo/sam/Servo.cpp.o",
+      "depfile_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/libraries/Servo/sam/Servo.cpp.d"
+    },
+    "compile_task": {
+      "args": [
+        "/home/node/.arduino15/packages/arduino/tools/arm-none-eabi-gcc/7-2017q4/bin/arm-none-eabi-g++",
+        "-c",
+        "-w",
+        "-g3",
+        "-nostdlib",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/defines.txt",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/cxxflags.txt",
+        "-DARDUINO_ARCH_NRF52840",
+        "-mcpu=cortex-m4",
+        "-mfloat-abi=softfp",
+        "-mfpu=fpv4-sp-d16",
+        "-w",
+        "-x",
+        "c++",
+        "-E",
+        "-CC",
+        "-DARDUINO=10607",
+        "-DARDUINO_ARDUINO_NANO33BLE",
+        "-DARDUINO_ARCH_MBED_NANO",
+        "-DARDUINO_ARCH_MBED",
+        "-DARDUINO_LIBRARY_DISCOVERY_PHASE=1",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE",
+        "-I/home/node/Arduino/libraries/Servo/src",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino/api/deprecated",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino/api/deprecated-avr-comp",
+        "-iprefix/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/includes.txt",
+        "/home/node/Arduino/libraries/Servo/src/sam/Servo.cpp",
+        "-o",
+        "/dev/null"
+      ]
+    }
+  },
+  {
+    "missing_include_h": ""
+  },
+  {
+    "compile": {
+      "source_path": "/home/node/Arduino/libraries/Servo/src/samd/Servo.cpp",
+      "object_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/libraries/Servo/samd/Servo.cpp.o",
+      "depfile_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/libraries/Servo/samd/Servo.cpp.d"
+    },
+    "compile_task": {
+      "args": [
+        "/home/node/.arduino15/packages/arduino/tools/arm-none-eabi-gcc/7-2017q4/bin/arm-none-eabi-g++",
+        "-c",
+        "-w",
+        "-g3",
+        "-nostdlib",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/defines.txt",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/cxxflags.txt",
+        "-DARDUINO_ARCH_NRF52840",
+        "-mcpu=cortex-m4",
+        "-mfloat-abi=softfp",
+        "-mfpu=fpv4-sp-d16",
+        "-w",
+        "-x",
+        "c++",
+        "-E",
+        "-CC",
+        "-DARDUINO=10607",
+        "-DARDUINO_ARDUINO_NANO33BLE",
+        "-DARDUINO_ARCH_MBED_NANO",
+        "-DARDUINO_ARCH_MBED",
+        "-DARDUINO_LIBRARY_DISCOVERY_PHASE=1",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE",
+        "-I/home/node/Arduino/libraries/Servo/src",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino/api/deprecated",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino/api/deprecated-avr-comp",
+        "-iprefix/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/includes.txt",
+        "/home/node/Arduino/libraries/Servo/src/samd/Servo.cpp",
+        "-o",
+        "/dev/null"
+      ]
+    }
+  },
+  {
+    "missing_include_h": ""
+  },
+  {
+    "compile": {
+      "source_path": "/home/node/Arduino/libraries/Servo/src/stm32f4/Servo.cpp",
+      "object_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/libraries/Servo/stm32f4/Servo.cpp.o",
+      "depfile_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/libraries/Servo/stm32f4/Servo.cpp.d"
+    },
+    "compile_task": {
+      "args": [
+        "/home/node/.arduino15/packages/arduino/tools/arm-none-eabi-gcc/7-2017q4/bin/arm-none-eabi-g++",
+        "-c",
+        "-w",
+        "-g3",
+        "-nostdlib",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/defines.txt",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/cxxflags.txt",
+        "-DARDUINO_ARCH_NRF52840",
+        "-mcpu=cortex-m4",
+        "-mfloat-abi=softfp",
+        "-mfpu=fpv4-sp-d16",
+        "-w",
+        "-x",
+        "c++",
+        "-E",
+        "-CC",
+        "-DARDUINO=10607",
+        "-DARDUINO_ARDUINO_NANO33BLE",
+        "-DARDUINO_ARCH_MBED_NANO",
+        "-DARDUINO_ARCH_MBED",
+        "-DARDUINO_LIBRARY_DISCOVERY_PHASE=1",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE",
+        "-I/home/node/Arduino/libraries/Servo/src",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino/api/deprecated",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino/api/deprecated-avr-comp",
+        "-iprefix/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/includes.txt",
+        "/home/node/Arduino/libraries/Servo/src/stm32f4/Servo.cpp",
+        "-o",
+        "/dev/null"
+      ]
+    }
+  },
+  {
+    "missing_include_h": ""
+  },
+  {
+    "compile": {
+      "source_path": "/home/node/Arduino/libraries/Servo/src/xmc/Servo.cpp",
+      "object_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/libraries/Servo/xmc/Servo.cpp.o",
+      "depfile_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/libraries/Servo/xmc/Servo.cpp.d"
+    },
+    "compile_task": {
+      "args": [
+        "/home/node/.arduino15/packages/arduino/tools/arm-none-eabi-gcc/7-2017q4/bin/arm-none-eabi-g++",
+        "-c",
+        "-w",
+        "-g3",
+        "-nostdlib",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/defines.txt",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/cxxflags.txt",
+        "-DARDUINO_ARCH_NRF52840",
+        "-mcpu=cortex-m4",
+        "-mfloat-abi=softfp",
+        "-mfpu=fpv4-sp-d16",
+        "-w",
+        "-x",
+        "c++",
+        "-E",
+        "-CC",
+        "-DARDUINO=10607",
+        "-DARDUINO_ARDUINO_NANO33BLE",
+        "-DARDUINO_ARCH_MBED_NANO",
+        "-DARDUINO_ARCH_MBED",
+        "-DARDUINO_LIBRARY_DISCOVERY_PHASE=1",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE",
+        "-I/home/node/Arduino/libraries/Servo/src",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino/api/deprecated",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino/api/deprecated-avr-comp",
+        "-iprefix/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/includes.txt",
+        "/home/node/Arduino/libraries/Servo/src/xmc/Servo.cpp",
+        "-o",
+        "/dev/null"
+      ]
+    }
+  },
+  {
+    "missing_include_h": ""
+  },
+  {
+    "compile": {
+      "source_path": "/home/node/Arduino/libraries/Servo/src/zephyr/Servo.cpp",
+      "object_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/libraries/Servo/zephyr/Servo.cpp.o",
+      "depfile_path": "/workspaces/Codespaces_Arduino_Bridge/build/sketches/demo_upload_validation/libraries/Servo/zephyr/Servo.cpp.d"
+    },
+    "compile_task": {
+      "args": [
+        "/home/node/.arduino15/packages/arduino/tools/arm-none-eabi-gcc/7-2017q4/bin/arm-none-eabi-g++",
+        "-c",
+        "-w",
+        "-g3",
+        "-nostdlib",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/defines.txt",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/cxxflags.txt",
+        "-DARDUINO_ARCH_NRF52840",
+        "-mcpu=cortex-m4",
+        "-mfloat-abi=softfp",
+        "-mfpu=fpv4-sp-d16",
+        "-w",
+        "-x",
+        "c++",
+        "-E",
+        "-CC",
+        "-DARDUINO=10607",
+        "-DARDUINO_ARDUINO_NANO33BLE",
+        "-DARDUINO_ARCH_MBED_NANO",
+        "-DARDUINO_ARCH_MBED",
+        "-DARDUINO_LIBRARY_DISCOVERY_PHASE=1",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE",
+        "-I/home/node/Arduino/libraries/Servo/src",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino/api/deprecated",
+        "-I/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino/api/deprecated-avr-comp",
+        "-iprefix/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/cores/arduino",
+        "@/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0/variants/ARDUINO_NANO33BLE/includes.txt",
+        "/home/node/Arduino/libraries/Servo/src/zephyr/Servo.cpp",
+        "-o",
+        "/dev/null"
+      ]
+    }
+  },
+  {
+    "missing_include_h": ""
+  }
+]

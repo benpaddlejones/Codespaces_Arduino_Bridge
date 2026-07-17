@@ -1,0 +1,9 @@
+{
+  "additionalFiles": "",
+  "compiler.optimization_flags": "",
+  "customBuildProperties": "",
+  "fqbn": "arduino:avr:uno",
+  "hardwareFolders": "/home/node/.arduino15/packages/arduino/hardware/avr/1.8.6,/home/node/.arduino15/packages/arduino/hardware/avr/1.8.6",
+  "otherLibrariesFolders": "/home/node/Arduino/libraries",
+  "sketchLocation": "/home/node/.vscode-remote/extensions/benpaddlejones.arduino-to-codespaces-bridge-1.2.0/dist/tools/I2C_Scanner"
+}

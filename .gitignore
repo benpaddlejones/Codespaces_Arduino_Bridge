@@ -56,6 +56,3 @@ coverage/
 
 # Bundled arduino-cli binary (fetched by scripts/fetch-arduino-cli.sh)
 arduino-to-codespaces-bridge/bin/
-
-# Extension packages
-*.vsix
