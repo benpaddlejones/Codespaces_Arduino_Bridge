@@ -120,15 +120,15 @@ const FQBN_RE = /^[\w-]+:[\w-]+:[\w-]+$/;
 let schemaOk = true;
 let schemaDetail = "";
 for (const b of boards) {
+  // vid/pid may be EMPTY arrays for boards detected by other means (e.g.
+  // ESP8266 entries carrying only a note), but present entries must be hex
   const valid =
     typeof b.name === "string" &&
     b.name.length > 0 &&
     FQBN_RE.test(b.fqbn || "") &&
     Array.isArray(b.vid) &&
-    b.vid.length > 0 &&
     b.vid.every((v) => HEX_RE.test(v)) &&
     Array.isArray(b.pid) &&
-    b.pid.length > 0 &&
     b.pid.every((p) => HEX_RE.test(p));
   if (!valid) {
     schemaOk = false;
@@ -442,6 +442,11 @@ for (const file of clientFiles) {
   }
 }
 
+// Endpoints intentionally absent from the extension server:
+// - /api/upload: only called by ServerUploadStrategy, which is dead code
+//   (never imported by UploadManager) - uploads go over Web Serial/WebUSB
+const EXTENSION_SERVER_EXEMPT = new Set(["/api/upload"]);
+
 ok(
   `found ${fetchPaths.size} distinct literal /api paths in the client`,
   fetchPaths.size >= 15,
@@ -450,7 +455,11 @@ ok(
 let tsMissing = [];
 let devMissing = [];
 for (const p of fetchPaths) {
-  if (!tsRoutes.some((r) => routeMatches(r, p))) tsMissing.push(p);
+  if (
+    !EXTENSION_SERVER_EXEMPT.has(p) &&
+    !tsRoutes.some((r) => routeMatches(r, p))
+  )
+    tsMissing.push(p);
   if (!devRoutes.some((r) => routeMatches(r, p))) devMissing.push(p);
 }
 ok(

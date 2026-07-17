@@ -118,6 +118,14 @@ export async function activate(
     });
   }
 
+  // Web client "Restart Bridge" button - the server responds to the HTTP
+  // request first, then asks the extension (which owns its lifecycle) to
+  // stop and start it again
+  server.on("restartRequested", async () => {
+    outputChannel.appendLine("[Extension] Restart requested by web client");
+    await restartServer();
+  });
+
   // Register tree views
   context.subscriptions.push(
     vscode.window.registerTreeDataProvider(

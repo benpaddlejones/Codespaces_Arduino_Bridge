@@ -4,680 +4,214 @@ All notable changes to the "Arduino to Codespaces Bridge" extension will be docu
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+Same-day debugging iterations are grouped into their release milestone.
 
-## [1.2.43] - 2026-07-17
+## [1.2.45] - 2026-07-17
 
 ### Fixed
 
-- Hardened the browser ↔ Codespaces forwarded-port connection against the
-  proxy's common failure modes:
-  - New bridgeFetch wrapper (timeout via AbortController, automatic retry
-    with backoff on network errors and transient 502/503/504 proxy
-    responses while the Codespace wakes) used by the boards/sketches
-    loaders, version check, compile, IntelliSense and firmware downloads.
-  - Detects GitHub's port-forward sign-in page: when the auth cookie
-    expires the proxy answers API calls with an HTML login page and
-    HTTP 200, which previously caused silent JSON-parse failures. Now shows
-    a clear "Codespaces session expired - reload the page" notice (startup
-    gate, health check and all bridgeFetch calls).
-  - When the health check sees the server come back online it reloads the
-    boards and sketches lists, so dropdowns recover automatically after a
-    Codespace sleep/wake instead of staying empty.
-  - Bridge errors trigger an immediate health check instead of waiting up
-    to 30s for the next poll, so the offline banner and recovery detection
-    start right away.
+- IntelliSense (.vscode/c_cpp_properties.json) could stay generated for a
+  previously used board, producing walls of red squiggles ("pinMode is
+  ambiguous", UART::begin mismatches) in sketches for the currently
+  selected board. Regeneration only ran on a manual dropdown change -
+  auto-detect sets the value programmatically (no change event fires) and
+  page load never synced at all. The selected board is now the single
+  source of truth: IntelliSense regenerates on manual selection, on
+  auto-detect, and on startup (deduplicated per FQBN).
 
-## [1.2.42] - 2026-07-17
+## [1.2.44] - 2026-07-17
 
-### Changed
-
-- Drivers tab Teensy entry now leads with the "no serial port at all"
-  explanation: the USB type is compiled into the sketch, and a factory-fresh
-  Teensy runs the blink demo without USB Serial, so it does not appear in
-  any port list - not a driver problem; the first Serial-type sketch must be
-  flashed from a host PC with Teensy Loader / Teensyduino.
-
-## [1.2.41] - 2026-07-17
+**Testing milestone** — static quality gates for the whole codebase.
 
 ### Added
 
-- Board Manager URL modal: one-click presets for common third-party board
-  packages - Teensy (PJRC), ESP32, ESP8266, Raspberry Pi Pico/RP2040
-  (earlephilhower), Adafruit, SparkFun, Seeed Studio and STM32 (STM32duino).
-  Already-configured URLs show a "✓ Added" badge; adding one prompts the
-  usual "Update Index" step, after which the boards appear in search and
-  install normally. Replaces the old copy-paste-only text list.
+- Web-client meta test suite (`npm run test:webclient`, 30 assertions):
+  boards.json copies in sync + schema + SAMD bootloader-PID pairing,
+  protocol configs verified against boards.json via real module import,
+  BOSSA regression tripwires (orphaned-read pattern, SAMD SRAM+Y# flow,
+  AIRCR reset), DOM id contract against index.html, syntax check of every
+  web-client file, and client→server API route coverage for BOTH servers.
+- `npm run test:all` runs all four static suites (version, meta, contracts,
+  webclient) — 82 assertions, no hardware or CLI required.
 
-## [1.2.40] - 2026-07-17
+### Fixed
+
+- Found by the new route-coverage test: the "Restart Bridge" button called
+  `POST /api/restart`, which only existed on the dev server — in the shipped
+  extension it always failed with 404. The extension server now implements
+  it via a `restartRequested` event handled by the extension.
+
+## [1.2.38 - 1.2.43] - 2026-07-17
+
+**Reliability & board-support milestone** — stable UI startup, stable
+Codespaces tunnel, Nano 33 BLE fix, Teensy support surface.
 
 ### Added
 
-- Drivers tab: PJRC Teensy entry - no driver needed for the serial monitor
-  on Windows 10+/macOS, Linux needs PJRC's 00-teensy.rules udev rules for
-  uploads, and a note that the HalfKay bootloader is USB HID (not reachable
-  from Web Serial - use Teensy Loader on the host if browser upload fails).
-
-## [1.2.39] - 2026-07-17
+- Startup gate: the UI is held behind a loading overlay until the bridge
+  server answers and the boards + sketches lists have loaded — no more
+  empty dropdowns while the server starts; Retry button on failure (1.2.38).
+- Board Manager: one-click presets for common third-party board packages —
+  Teensy (PJRC), ESP32, ESP8266, RP2040 (earlephilhower), Adafruit,
+  SparkFun, Seeed Studio, STM32duino (1.2.41).
+- Drivers tab: PJRC Teensy entry — no driver needed on Windows 10+/macOS,
+  Linux udev rules for uploads, HalfKay-is-HID limitation, and the
+  "no serial port at all" explanation (USB type is compiled into the
+  sketch; factory boards need one host-side flash first) (1.2.40, 1.2.42).
 
 ### Fixed
 
-- Nano 33 BLE (nRF52) upload no longer reports "Upload failed: The device
-  has been lost" after a fully successful flash. The nRF52 bootloader
-  resets and drops off USB within ~30ms of the K# reset command (without
-  ACKing), which rejected our pending ACK read with a NetworkError that
-  propagated up as an upload failure and triggered a redundant
-  error-recovery reconnect racing the normal restart reconnect.
-  - BossaProtocol.reset() now treats device-loss during the K# sequence as
-    the expected success outcome.
-  - readChunk() clears its shared in-flight read when it rejects, so a
-    stale error can't re-throw on a later call.
-  - disconnect() releases reader/writer locks even when cancel() throws on
-    a vanished port (previously left the stream locked, causing the
-    "Cannot abort a locked stream" close warning).
-  - Duplicate K# command logging removed (protocol layer logs it once).
-  - SAMD flow untouched: its reset uses the W# AIRCR write with its own
-    error handling and never calls reset().
+- Nano 33 BLE reported "Upload failed: The device has been lost" after a
+  fully successful flash: the nRF52 bootloader resets and drops off USB
+  ~30ms after K# without ACKing. Device loss during reset is now treated as
+  the expected success outcome, and serial teardown is robust against a
+  vanished port (1.2.39).
+- Codespaces forwarded-port stability (1.2.43): new `bridgeFetch` wrapper
+  with timeout + retry/backoff on transient proxy failures; detection of
+  GitHub's port sign-in page served as HTTP 200 after cookie expiry
+  (previously silent JSON failures — now a clear "reload the page" notice);
+  automatic boards/sketches reload when the server comes back after a
+  Codespace sleep/wake; immediate health check on any bridge error.
 
-## [1.2.38] - 2026-07-17
+## [1.2.31 - 1.2.37] - 2026-07-17
+
+**SAMD21 upload milestone** — MKR WiFi 1010 upload working end-to-end,
+then extended to the full official SAMD family. Flow verified against the
+official bootloader source (ArduinoCore-samd `bootloaders/zero`) and
+bossac's D2xNvmFlash driver.
 
 ### Added
 
-- Startup gate: the Bridge UI is now held behind a loading overlay until the
-  bridge server responds and the boards + sketches lists have loaded, so
-  users never interact with empty dropdowns while the server is still
-  starting. The overlay polls the server (up to 60s with live status), then
-  loads both lists; if either fails a Retry button re-runs startup.
+- Per-board SAMD21 protocol configs with bootloader PIDs from boards.txt,
+  covering MKR1000, MKR Zero, MKR WiFi 1010, MKR FOX 1200, MKR WAN
+  1300/1310, MKR GSM 1400, MKR NB 1500, MKR Vidor 4000, Nano 33 IoT and
+  Zero (native USB).
+- Bootloader-mode auto-detect: boards.json lists bootloader PIDs
+  (app PID − 0x8000) so sketch-less boards stuck in the bootloader are
+  still recognised.
+- V# capability probe before erase (mirrors bossac): logs the bootloader
+  version and its [Arduino:XYZ] flags.
 
-## [1.2.37] - 2026-07-17
+### Fixed
+
+- SAM-BA flow corrected to match the official bootloader: chip erase is a
+  blocking full-flash busy-loop (waits up to 30s for the ACK instead of
+  writing to a deaf board); flash writes go to the SRAM buffer at
+  0x20004000 and are committed with Y# (the S handler is a raw memcpy for
+  RAM — direct-to-flash S# writes were never valid); reset uses a W# AIRCR
+  SYSRESETREQ write because 2018-era bootloaders have no K# command (the
+  reason boards stayed stuck in bootloader mode).
+- Orphaned-read bug: every polling read loop raced a fresh reader.read()
+  against a timer; losing reads stayed queued and swallowed later bootloader
+  ACKs (uploads succeeded while logging walls of timeout errors). All reads
+  now go through a single shared in-flight read (`readChunk`).
+- SAMD boards no longer inherit the R4 WiFi configuration; bootloader
+  re-enumeration after the 1200-baud touch raises the port chooser;
+  restored the missing `flashToBootloader()` handoff.
+
+### Changed
+
+- Removed debug output from upload logs (duplicate command logging,
+  payload previews, [Debug] terminal lines).
+
+## [1.2.24 - 1.2.30] - 2026-07-17
+
+**Onboarding & guidance milestone.**
 
 ### Added
 
-- The validated SAMD21 upload flow (SAM-BA via SRAM buffer + Y# commits,
-  30s chip erase, AIRCR reset) now covers the full official SAMD family.
-  Added protocol configs with bootloader PIDs from ArduinoCore-samd
-  boards.txt and boards.json auto-detect entries for: MKR Zero, MKR FOX
-  1200, MKR WAN 1300/1310, MKR GSM 1400, MKR NB 1500, MKR Vidor 4000
-  (joining MKR1000, MKR WiFi 1010, Nano 33 IoT and Zero). MKR1000 and Zero
-  PID lists extended with their 0x82xx/0x02xx variants.
-
-### Changed
-
-- Removed debug output from upload logs: [Debug] sketch/board/artifact
-  lines, duplicated SAM-BA command logging between strategy and protocol
-  layers, and firmware payload-preview bytes.
-
-## [1.2.36] - 2026-07-17
+- Drivers tab: per-OS USB driver directory (official Arduino, CP210x,
+  CH340/CH9102, FTDI, UNO R4 WinUSB via Zadig) with official download links
+  and a "no serial device found" checklist; Connect shows a guidance dialog
+  when the port chooser closes with nothing selected.
 
 ### Fixed
 
-- SAM-BA responses were silently discarded by orphaned serial reads,
-  producing X#/Y#/N#/V# "ACK timeout" errors on every step even though the
-  bootloader received and executed every command (1.2.35 uploads succeeded
-  while logging a wall of errors). All polling read loops raced a fresh
-  reader.read() against a 20-50ms timer each iteration; the losing read
-  stayed queued on the stream, and when the bootloader's reply arrived it
-  resolved the OLDEST orphaned read - whose race had already timed out - so
-  the bytes were dropped. A 30s erase wait accumulated ~600 orphaned reads
-  that then swallowed every subsequent ACK. BossaProtocol now keeps a single
-  shared in-flight read (readChunk) reused across poll slices, and all read
-  helpers (readAck, readUntilTerminator, readBytes, flush) plus the
-  strategy's probe/handshake/waitForResponse loops consume it. Reader
-  swaps go through the new reattachReader() so a stale in-flight read can
-  never linger.
+- Board-mismatch warning only fires on a clear mismatch (generic USB-UART
+  bridge chips and unknown VID/PIDs no longer false-alarm on clones).
+- Sketch dropdown could be empty right after extension start (VS Code file
+  index not warmed up) — server now falls back to a filesystem scan.
 
-## [1.2.35] - 2026-07-17
+## [1.2.13 - 1.2.23] - 2026-07-17
 
-### Fixed
-
-- SAMD21 upload flow rewritten to match the official bootloader source
-  (ArduinoCore-samd 1.6.18 bootloaders/zero/sam_ba_monitor.c, the code
-  running on boards with the "v2.0 [Arduino:XYZ] Mar 2018" bootloader) and
-  bossac's D2xNvmFlash driver:
-  - Chip erase (X#) timeout raised to 30s. The bootloader erases 0x2000 to
-    end-of-flash (992 rows) in a blocking busy-loop with USB unserviced -
-    the board is deaf until it finishes, and worn flash can exceed 10s.
-    Sending flash writes to the still-erasing board is what froze uploads.
-  - Flash writes no longer use direct-to-flash S# commands. The bootloader's
-    S handler is a raw memcpy meant for RAM; bossac never writes flash that
-    way. Each 4KB chunk is now written to the SRAM buffer at 0x20004000 and
-    committed with Y<sram>,0# + Y<flash>,<size># - the Y handler performs
-    the proper NVM sequence (PBC, fill page buffer, WP, wait READY) and only
-    ACKs after commit.
-  - Reset: 2018-era SAMD bootloaders have NO K# command (it was silently
-    ignored, leaving the board stuck in bootloader mode - the reason boards
-    kept enumerating with the bootloader PID). SAMD now resets bossac-style
-    with W# writing SYSRESETREQ (0x05FA0004) to the Cortex-M AIRCR register
-    at 0xE000ED0C, which works on every SAMD bootloader generation.
-
-## [1.2.34] - 2026-07-17
-
-### Fixed
-
-- Board auto-detect now recognises Arduino boards that enumerate in
-  BOOTLOADER mode. Native-USB boards (SAMD/32U4) present a different USB PID
-  in bootloader mode (app PID - 0x8000, per ArduinoCore boards.txt), and a
-  board with no valid sketch stays in the bootloader permanently - so a MKR
-  WiFi 1010 showing PID 0x0054 was never matched against the app-mode-only
-  0x8054 entry. Added bootloader PIDs for: Leonardo (0x0036), Micro
-  (0x0037), MKR1000 (0x004e), MKR WiFi 1010 (0x0054), Nano 33 IoT (0x0057),
-  Zero native (0x004d). Both boards.json copies (resources/ and
-  web-client/public/) updated.
-
-## [1.2.33] - 2026-07-17
-
-### Fixed
-
-- SAMD21 (MKR WiFi 1010 etc.) upload no longer aborts when the bootloader
-  does not ACK the X# chip erase within the timeout. Restores the published
-  1.1.1 behavior of continuing to the flash write:
-  - The official SAM-BA bootloader (sam_ba_monitor.c) erases from the given
-    offset to the END of flash in a blocking busy-loop - on a 256KB SAMD21
-    this can exceed 5s, so the X\n\r ACK may simply arrive late. Erase
-    timeout raised to 10s for SAMD.
-  - Old bootloaders silently ignore X#; secure bootloaders auto-erase on the
-    first flash write (erased_from check in the Y handler), so continuing is
-    safe in every case. A warning is logged instead of a hard failure.
-  - The hard abort is kept for the applet-based R4 WiFi / Nano 33 BLE flows,
-    where a missing X# ACK is a genuine failure.
+**UNO R4 family DFU upload milestone** — R4 Minima/WiFi/Nano R4 uploads
+working end-to-end in the browser.
 
 ### Added
 
-- SAMD upload now queries V# before erasing (mirrors bossac) and logs the
-  bootloader version string plus its [Arduino:XYZ] capability flags
-  (X=chip-erase, Y=buffer-write, Z=checksum). If the bootloader explicitly
-  reports no X support the erase wait is skipped entirely.
-
-## [1.2.31] - 2026-07-17
-
-### Fixed
-
-- MKR WiFi 1010 (and other SAMD21 boards) upload: separation of board-family
-  policy from the shared SAM-BA protocol engine.
-  - Per-board SAMD21 configs (MKR WiFi 1010, MKR1000, MKR Zero, Nano 33
-    IoT, Zero) with the correct bootloader PIDs from ArduinoCore-samd
-    boards.txt (bootloader PID = application PID - 0x8000); previously
-    mkrwifi1010 silently inherited the R4 WiFi configuration.
-  - After the 1200 baud touch, SAMD boards re-enumerate as a NEW USB device
-    the browser has no Web Serial permission for. When the app-mode port is
-    disconnected and no granted bootloader port is found, the strategy now
-    raises the bootloader port chooser (restored 1.1.1 behaviour) instead of
-    retrying the dead port at every baud rate.
-  - Restored `UploadManager.flashToBootloader()`, which the chooser handoff
-    calls but had been lost in the 1.1.x source recovery.
-  - Flash log header now names the actual protocol variant instead of
-    always saying "R4 WiFi".
-
-## [1.2.30] - 2026-07-17
-
-### Fixed
-
-- Sketch dropdown could be empty on first page load right after the
-  extension started: the server's sketch listing relies on VS Code's
-  workspace file index (`findFiles`), which returns no results until the
-  index has warmed up. The server now falls back to a direct filesystem
-  scan of the workspace (same ignore rules, depth-limited) whenever the
-  index returns nothing, so the list is populated immediately.
-
-## [1.2.29] - 2026-07-17
+- 1200bps-touch DFU entry mirroring the official ArduinoCore-renesas
+  firmware: the touch reboots the board into the pure DFU bootloader, which
+  WebUSB can claim cleanly — no manual RESET double-tap needed.
+- Detection of the touch's re-enumeration (the CDC port dies mid-open by
+  design, previously misreported as failure) and one-time bootloader
+  pairing flow.
+- Windows root cause identified and documented everywhere it matters:
+  Chrome only lists WebUSB devices with the WinUSB driver bound, so the R4
+  family needs a one-time Zadig/Arduino-IDE driver install per PC.
 
 ### Changed
 
-- Maintenance release: rebuild of 1.2.28 (Drivers tab, no-device connect
-  guidance, clear-mismatch-only board warning, DFU driver guidance dialog).
+- Upload diagnostics tracer removed after verification; stale hashed client
+  bundles no longer accumulate in the VSIX (22.5 MB → 17.9 MB).
+- License unified to MIT (package.json, LICENSE, README).
 
-## [1.2.28] - 2026-07-17
+## [1.2.1 - 1.2.12] - 2026-07-17
 
-### Changed
-
-- When the DFU device chooser closes with no device selected on Windows
-  (UNO R4 family uploads), the same driver guidance dialog used by Connect
-  now appears, explaining the missing WinUSB driver with an "Open driver
-  guide" button that jumps to the Drivers tab. The chooser prompt and the
-  terminal error also point to the Drivers tab.
-
-## [1.2.27] - 2026-07-17
-
-### Changed
-
-- The pre-upload board mismatch warning now only appears on a CLEAR
-  mismatch, i.e. when the connected device is positively identified as a
-  different known board. Devices with generic USB-to-UART bridge chips
-  (CP210x, CH340, FTDI, Prolific) and unrecognised VID/PIDs no longer
-  trigger the warning - those IDs identify the bridge chip, not the board,
-  so clone boards were producing false alarms on every upload.
-
-## [1.2.26] - 2026-07-17
-
-### Added
-
-- New **Drivers** tab in the web client: a directory of the USB serial/DFU
-  drivers students may need on the computer running the browser (official
-  Arduino boards, Silicon Labs CP210x, WCH CH340/CH9102, FTDI FT232, UNO R4
-  DFU WinUSB via Zadig) with per-OS (Windows/macOS/Linux) download links to
-  the official vendor sites and step-by-step install instructions, plus a
-  "no serial device found" troubleshooting checklist (data cable, USB port,
-  Device Manager/lsusb checks, firmware/bootloader, dialout group, brltty).
-- Connect now shows a guidance dialog when the serial port chooser closes
-  with no device selected, explaining that an empty list means the computer
-  has not detected the board (check cable, driver, firmware) with a button
-  that opens the Drivers tab.
-
-## [1.2.23] - 2026-07-17
-
-### Changed
-
-- License unified to MIT: package.json previously declared GPL-3.0 while the
-  bundled LICENSE file and README said MIT. All three now agree on MIT.
-
-## [1.2.22] - 2026-07-17
-
-### Changed
-
-- Removed the R4 upload diagnostic tracer (UploadTrace) now that the DFU
-  flow is verified working: no more TRACE console output, USB/serial
-  snapshots, or terminal debug reports. The functional upload logic
-  (1200bps touch, re-enumeration detection, open retries, chooser retry and
-  driver guidance) is unchanged.
-- Package size: `dist/web` is now cleaned before each build so stale hashed
-  client bundles from previous builds no longer accumulate inside the VSIX
-  (was shipping ~10 obsolete bundles, several MB).
-
-## [1.2.21] - 2026-07-17
-
-### Added
-
-- Guided onboarding popups in the web client:
-  - First open with no board platforms installed → popup pointing to the
-    Board Manager with install instructions.
-  - Connecting a recognised board (e.g. UNO R4) whose platform core is not
-    installed → popup naming the required platform with an "Open Board
-    Manager" shortcut that pre-fills the search.
-  - Compiling a sketch that includes a missing library (e.g. `<Servo.h>`)
-    → popup listing the missing libraries with install suggestions and an
-    "Open Library Manager" shortcut that pre-fills the search.
-- The extension server now scans failed compile output for missing headers
-  and returns Library Manager suggestions (`missingIncludes`), matching the
-  dev server behaviour — previously it always returned an empty list.
-
-## [1.2.20] - 2026-07-17
-
-### Changed
-
-- Windows driver guidance generalised to the whole UNO R4 family (R4 Minima,
-  R4 WiFi, Nano R4) in the README troubleshooting section, the supported
-  boards table, the DFU chooser dialog, and the empty-chooser error message.
-
-## [1.2.19] - 2026-07-17
-
-### Changed
-
-- R4 Minima (DFU/WebUSB) upload confirmed working end-to-end once the
-  Windows WinUSB driver is installed. Driver guidance is now surfaced only
-  on the exact failure signature (Windows + empty USB chooser): the terminal
-  error explains the one-time Zadig/Arduino-IDE driver installation. The
-  happy path is prompt-free after the one-time device pairing. README gains
-  a Windows driver troubleshooting section and lists the R4 Minima as
-  supported.
-
-## [1.2.18] - 2026-07-17
-
-### Changed
-
-- ROOT CAUSE of the empty DFU chooser on Windows confirmed: the UNO R4
-  Minima bootloader enumerates as "Santiago DFU" (2341:0369) but Windows has
-  no driver for it (Code 28), and Chrome on Windows only lists WebUSB
-  devices with the WinUSB driver bound. The chooser guidance now names the
-  device ("Santiago DFU" / "UNO R4 Minima DFU") and explains the one-time
-  WinUSB installation with Zadig when the list is empty. The 1200bps touch,
-  bootloader entry, and re-enumeration detection were all verified working
-  in this configuration.
-
-## [1.2.17] - 2026-07-17
-
-### Fixed
-
-- Web Serial spec compliance: WebSerialProvider now registers
-  `navigator.serial` `connect`/`disconnect` events (the API's canonical way
-  to track device arrival/removal) and adopts freshly connected granted
-  ports when the previous reference died from re-enumeration. Post-failure
-  recovery refreshes the port object from `getPorts()` on each retry instead
-  of reusing a dead `SerialPort` instance. Fixed a write-timeout bug that
-  leaked the writer lock (calling `getWriter()` on an already-locked stream)
-  which poisoned all subsequent writes.
-- Bootloader chooser: retries once after a 4s pause when nothing was
-  selected (first-time Windows driver installation can leave the chooser
-  list momentarily empty), with clearer instructions. IMPORTANT: the R4's
-  DFU-mode magic lives in a battery-backed register (goBootloader writes
-  DOUBLE_TAP_MAGIC to VBTBKR) and only clears on a POWER CYCLE - if a board
-  seems stuck with no serial port, unplug and replug its USB cable.
-
-## [1.2.16] - 2026-07-17
-
-### Fixed
-
-- The 1200bps touch was working all along but being reported as a failure:
-  Chrome's `open({baudRate: 1200})` delivers the 1200 line coding with DTR
-  low, the firmware reboots into the bootloader MID-OPEN, the CDC port dies
-  under Chrome, and `open()` rejects with NetworkError. Every retry then
-  fails because the CDC device no longer exists (the board is already in DFU
-  mode). The open-retry loop now detects the re-enumeration
-  (`SerialPort.connected === false`, with a `getPorts()` fallback for older
-  Chrome) and treats it as touch SUCCESS, proceeding to bootloader pairing
-  and flashing. Post-failure serial recovery now retries 6×2s to outlast the
-  bootloader's ~10s auto-exit window.
-
-## [1.2.15] - 2026-07-17
-
-### Fixed
-
-- 1200bps touch failed on Windows hosts with `NetworkError: Failed to open
-serial port` because Windows releases the COM handle a moment AFTER
-  `SerialPort.close()` resolves; the immediate reopen at 1200 baud raced the
-  OS (diagnosed precisely by the new upload trace: close ok at +32ms, open
-  failed at +46ms). The touch now retries the open up to 8 times with 250ms
-  backoff, and the post-failure serial-monitor recovery retries reconnecting
-  3 times for the same reason.
-
-## [1.2.14] - 2026-07-17
-
-### Added
-
-- Deep upload diagnostics (`UploadTrace`): every DFU upload step is recorded
-  with sub-millisecond timing, structured data, and USB/serial device
-  snapshots (paired WebUSB devices with open/claim state, Web Serial ports
-  with VID/PID). On failure the full JSON report is printed to the terminal
-  and retrievable via `window.getUploadDebugReport()` in the DevTools
-  console, pinpointing the exact failing operation.
-
-## [1.2.13] - 2026-07-17
-
-### Fixed
-
-- UNO R4 Minima DFU-mode entry now uses the 1200bps touch over Web Serial as
-  the primary mechanism, mirroring the official ArduinoCore-renesas firmware
-  (`CheckSerialReset` in `cores/arduino/usb/SerialUSB.cpp`): opening the CDC
-  port at 1200 baud and deasserting DTR makes the sketch write the double-tap
-  magic and watchdog-reset into the DFU bootloader (PID 0x0369). This avoids
-  the WebUSB `claimInterface` on the runtime CDC interface entirely, which
-  the host cdc_acm kernel driver blocks in browsers (the root cause of the
-  automatic-detach timeout). No RESET double-tap needed. The one-time USB
-  chooser only appears the first time the bootloader device is paired.
-
-## [1.2.12] - 2026-07-17
-
-### Changed
-
-- Confirmed the published marketplace 1.1.1 DFU code is identical to the
-  current implementation, so nothing was "missing" from it. On platforms where
-  the browser cannot detach the host CDC-ACM driver, the app-mode WebUSB DFU
-  detach (`claimInterface` on the DFU-runtime interface) times out - this is a
-  hard WebUSB limitation, not a regression. The reliable browser path is to
-  double-tap RESET so the board re-enumerates as a pure DFU device (PID
-  0x0369) with no CDC interface.
-- Made the manual bootloader-entry fallback reliable against the R4 DFU
-  bootloader's short (~8s) activity timeout. The previous flow polled for the
-  bootloader for 30s before opening the USB chooser, so the board had already
-  rebooted to application mode by the time the chooser appeared, leaving it
-  empty ("No DFU device selected"). `enterBootloaderManually()` now skips the
-  poll: it does a single instant check for an already-paired bootloader, then
-  hands straight to the chooser whose button click is the user gesture. The
-  user double-taps RESET and clicks within the same few seconds, so the chooser
-  opens while the board is still in DFU mode. The chooser filter also accepts
-  the application PID as a fallback to avoid an empty list if the timing slips.
-
-## [1.2.11] - 2026-07-17
-
-### Fixed
-
-- Reverted the 1.2.7 change that closed the Web Serial port before a WebUSB/DFU
-  upload. Inspecting the published marketplace 1.1.1 bundle (the last version
-  confirmed working for the UNO R4 Minima) showed its DFU strategy is identical
-  to ours, but it re-opened the serial port at 115200 for every board before
-  flashing rather than closing it. Closing the port let the host CDC-ACM driver
-  re-grab the composite device and stalled the DFU `claimInterface()`. The
-  upload orchestration now matches 1.1.1: the port is re-opened at 115200 for
-  all boards before flashing, restoring the working Minima DFU path.
-
-## [1.2.10] - 2026-07-17
-
-### Added
-
-- DFU upload (Arduino UNO R4 Minima family) now falls back to guided manual
-  bootloader entry when the browser cannot perform the automatic detach. In a
-  browser, WebUSB cannot claim the DFU runtime interface while the host
-  CDC-ACM driver owns the composite device (native `dfu-util` succeeds only
-  because libusb can detach the kernel driver), so the app-mode detach timed
-  out. Instead of failing, the upload now prompts the user to double-tap the
-  RESET button; the board re-enumerates as a pure DFU device (PID 0x0369) with
-  no CDC interface, which WebUSB claims cleanly, and flashing continues
-  automatically. The claim timeout was also shortened (8s) so the fallback
-  engages promptly. The DFU flash protocol/state machine is unchanged.
-
-## [1.2.9] - 2026-07-17
-
-### Fixed
-
-- DFU upload (Arduino UNO R4 Minima family) could still freeze silently at the
-  DFU detach step: WebUSB's `claimInterface()` blocks indefinitely (no error,
-  no rejection) when the host CDC-ACM serial driver still holds the composite
-  device, so the whole upload hung after "Device opened". The upload flow now
-  waits briefly after releasing the Web Serial port so the OS can free the CDC
-  interface before WebUSB claims it, and `claimInterface()` is bounded by a
-  15s timeout that surfaces a clear, actionable error (unplug/replug, close
-  other serial monitors, or double-tap RESET) instead of hanging forever. The
-  device's USB interface descriptors are now logged before the claim to aid
-  diagnosis. The DFU protocol/state machine itself is unchanged.
-
-## [1.2.8] - 2026-07-17
-
-### Fixed
-
-- Auto board detection never matched the Arduino UNO R4 Minima. Its entry in
-  `boards.json` used the FQBN `arduino:renesas_uno:unor4minima`, but arduino-cli
-  (and the rest of the app) uses `arduino:renesas_uno:minima`. Because the
-  VID/PID merge in `loadBoards()` matches boards by exact FQBN, the Minima's
-  USB VID/PID (0x2341/0x0069) were never attached to its dropdown option, so
-  connecting the board could not auto-select it. Corrected the FQBN so that
-  connecting a Minima now auto-selects "Arduino Uno R4 Minima" in the board menu
-
-## [1.2.7] - 2026-07-17
-
-### Fixed
-
-- DFU upload (Arduino UNO R4 Minima family) hung forever right after "Device
-  opened", during the DFU detach step. `handleUpload()` re-opened the Web
-  Serial port at 115200 baud before every upload (needed for AVR's DTR reset
-  toggle), but for WebUSB/DFU boards that open serial handle holds the USB
-  interface, so the DFU strategy's `claimInterface()` call blocked
-  indefinitely. The upload flow now closes and keeps the Web Serial port
-  released for WebUSB/DFU boards (via the new `UploadManager.usesWebUsb()`
-  check) and only re-opens it for serial-based strategies (AVR/BOSSA)
-
-## [1.2.6] - 2026-07-17
-
-### Fixed
-
-- DFU upload (Arduino UNO R4 Minima/Nano R4/Portenta/Giga/Nicla/Opta) failed
-  with `SecurityError: Failed to execute 'requestDevice' on 'USB': Must be
-handling a user gesture` when no device was previously paired. Compile &
-  Upload awaits a multi-second compile before the upload step, which consumes
-  the original button-click gesture, so the direct `navigator.usb.requestDevice()`
-  call in the DFU prepare step was rejected. The initial DFU device request now
-  routes through the existing `requestDfuDevice` modal, whose own button click
-  supplies a fresh user gesture (the same pattern already used when re-selecting
-  the bootloader device)
-
-## [1.2.5] - 2026-07-17
-
-### Fixed
-
-- Serial monitor now stays silent during compile and upload. Incoming device
-  output (e.g. plotter/heartbeat lines) previously interleaved with the build
-  log because the terminal echo was wired directly to the serial provider and
-  ignored the paused state, and plain "Compile" never paused at all. The
-  terminal now respects the paused state, `pause()`/`resume()` are
-  reference-counted so a compile nested inside an upload balances correctly,
-  and every compile path pauses the monitor while building
-
-## [1.2.4] - 2026-07-17
-
-### Fixed
-
-- "Failed to load libraries: fetch failed" (and the same failure for the
-  Boards/Status tree views, board selection, compile, and environment sync):
-  the 1.2.1 security change bound the server to IPv4 loopback (`127.0.0.1`),
-  but the extension's internal requests used `http://localhost`, which Node 18+
-  resolves to IPv6 `::1` first — so the connection was refused. All internal
-  extension requests now target `127.0.0.1` to match the server bind. The
-  browser URL opened by "Open Bridge" still uses `localhost` (unchanged)
-
-## [1.2.3] - 2026-07-17
-
-### Fixed
-
-- Sketch selection sent an `undefined` sketch name to the compiler: the web
-  client read the non-existent `relativePath` field from `/api/sketches`
-  (the server returns `path`), so every sketch option carried the literal
-  value `"undefined"` and compiles (e.g. the upload-validation sketch) failed
-  with `Compiling sketch: 'undefined'`. The client now reads `path`, and the
-  compile guard rejects stray `"undefined"`/`"null"` values
-
-## [1.2.2] - 2026-07-17
-
-### Added
-
-- Meta / code-quality test suite (`npm run test:meta`) that guards the
-  extension source: it fails the build if `eslint` or `tsc --noEmit` report
-  problems, if any source file, exported declaration, or public class method is
-  missing a Google-style JSDoc block, or if a contributed command is not
-  registered in code
-- Google-style JSDoc documentation across previously undocumented exports and
-  methods in the config, services, views, and server modules
-
-## [1.2.1] - 2026-07-17
+**Security & recovery milestone.**
 
 ### Security
 
-- CSRF protection: state-changing API requests (`POST`/`PUT`/`PATCH`/`DELETE`)
-  are now rejected when the browser reports them as cross-site
-  (`Sec-Fetch-Site: cross-site`), blocking hostile websites from driving
-  `arduino-cli` (core/library install/uninstall, board-URL changes, compiles)
-  via the local server
-- Removed the permissive `Access-Control-Allow-Origin: *` CORS policy; the web
-  client is same-origin, so cross-origin sites can no longer read API responses
-  (e.g. the workspace sketch listing)
-- Added hardening HTTP headers: `X-Content-Type-Options: nosniff`,
-  `Referrer-Policy: no-referrer`, `Cross-Origin-Resource-Policy: same-origin`,
-  and anti-clickjacking `X-Frame-Options: DENY` + CSP `frame-ancestors 'none'`
-- Argument-injection guard for all values passed to `arduino-cli` (FQBN,
-  platform/library names and versions, board-manager URLs): values beginning
-  with `-` or containing control characters are rejected
-- Path-traversal guards: `/api/hex/:sketchName` accepts only a safe path
-  segment, and relative compile paths must stay inside the workspace
-- The extension server now binds to loopback (`127.0.0.1`) instead of all
-  interfaces, and the JSON body parser is capped at 2 MB
-
-## [1.2.0] - 2026-07-05
-
-> This release merges the previously-unpublished source of the 1.1.0/1.1.1
-> marketplace releases (recovered from the published package) with new work.
+- CSRF rejection for cross-site state-changing requests, removal of
+  wildcard CORS, hardening headers (nosniff, no-referrer, frame denial),
+  arduino-cli argument-injection guards, path-traversal guards, loopback
+  bind, and a 2 MB JSON body cap (1.2.1).
 
 ### Added
 
-- I2C Scanner tool: one-click "🔍 I2C Scan" button uploads a bundled diagnostic
-  sketch that scans the I2C bus (0x08-0x77), identifies 27+ common devices
-  (OLEDs, IMUs, environmental sensors, RTCs), detects floating buses, and
-  rescans every 10 seconds
-- Bundled tool sketches compiled via `__TOOL__:<id>` paths (packaged in
-  `dist/tools/`)
-- Periodic server health monitor with memory watermarks, self-healing garbage
-  collection, and `/api/health/history` diagnostics endpoint
-- Modal focus trap (WAI-ARIA dialog pattern) for bootloader and board-mismatch
-  dialogs: Tab wraps, ESC cancels, focus restores on close
-- IntelliSense generation: `POST /api/intellisense` regenerates
-  `.vscode/c_cpp_properties.json` from `arduino-cli board details` build
-  properties (correct compiler, core/variant includes, and defines for the
-  selected board), with `Arduino.h` force-included so `.ino` files resolve
-  core symbols
+- Meta / code-quality test suite for the extension source: eslint, tsc,
+  JSDoc coverage and VS Code best practices (1.2.2).
 
-### Changed
+### Fixed
 
-- Serial connection teardown hardened: idempotent cleanup guard, half-open
-  ports are closed on failed connects, device-loss errors are classified and
-  reported cleanly, and the UI stays in sync on unexpected disconnects
-- Cancelling the browser port picker now shows a friendly message instead of
-  an error
-- All server routes are wrapped with error protection so requests always
-  receive a response (no hanging requests after async errors)
-- Compile API accepts both `sketchPath` and `path` and returns `log`/`artifact`
-  fields for web client compatibility
+- Serial monitor stays silent during compile/upload; sketch selection sent
+  `undefined` to the compiler (client/server field mismatch); extension
+  internal requests use 127.0.0.1 to match the server bind; DFU groundwork
+  fixes for the R4 family (user-gesture handling, port lifecycle, board
+  auto-detect FQBN).
 
-### Recovered from 1.1.0/1.1.1 (published Dec 2025, source reconstructed)
+## [1.2.0] - 2026-07-05
 
-- Hardware upload protocol upgrades (web client):
-  - New WebUSB DFU upload strategy for Uno R4 Minima, Nano R4, Portenta
-    C33/H7, Giga R1, Nicla Vision and Opta boards (DFU 1.1 state machine,
-    device-reported transfer sizes, DfuSe set-address for STM32H7)
-  - BOSSA nRF52 variant (Nano 33 BLE): flash-applet buffer writes, manual
-    double-tap bootloader detection, DTR-hold 1200 touch timing, Intel HEX
-    conversion with start-address-based flash offsets
-  - Standard-BOSSA direct-write mode (S# writes without Y# copy commands)
-  - Bootloader port re-enumeration detection after the 1200 baud touch
-  - Post-upload reconnection: wait for restart, find the re-enumerated
-    port by VID, retry connection 3 times
-  - Compile guards for missing board/sketch selection
-- Bundled `arduino-cli` binary (`bin/arduino-cli`, fetched by
-  `scripts/fetch-arduino-cli.sh`) so the extension works without a system
-  install
-- `arduino-requirements.txt` plain-text environment config with automatic
-  migration from the legacy `arduino-bridge.config.json`
-- Event-driven config sync: the server emits `environmentChanged` after
-  install/uninstall/upgrade operations and the extension persists the
-  requirements file
-- Environment sync reports installation errors in a notification instead of
-  claiming success
-- Board list reports "no cores installed" with guidance instead of an empty
-  list
-- Sketch discovery uses the VS Code file search API (faster, respects remote
-  filesystems)
-- Server port defaults to 3000 with auto-forwarding (`openBrowserOnce`) and
-  falls back to the next free port when busy
-- Editor defaults for `.ino` files (cpp association, clang-format, spell-check
-  dictionary); requires the `xaver.clang-format` extension
-- License changed to GPL-3.0
+Merges the previously-unpublished source of the 1.1.x marketplace releases
+(recovered from the published package) with new work.
 
-### Fixed (vs published 1.1.1)
+### Added
 
-- The VSIX no longer leaks the unbundled `out/` build tree (24 files vs 3900+)
+- I2C Scanner tool, bundled tool sketches, server health monitor, modal
+  focus trap, IntelliSense generation from board build properties.
+- Recovered from 1.1.x: WebUSB DFU strategy (R4 Minima/Portenta/Giga/
+  Nicla/Opta), BOSSA nRF52 variant (Nano 33 BLE), bootloader port
+  re-enumeration detection, post-upload reconnection, bundled arduino-cli,
+  arduino-requirements.txt environment sync, faster sketch discovery.
+
+### Fixed
+
+- The VSIX no longer leaks the unbundled `out/` build tree.
 
 ## [1.1.1] - 2025-12-18
 
 ## [1.1.0] - 2025-12-16
 
-> Published to the marketplace from source that was not committed at the time;
-> reconstructed and merged into 1.2.0 (see above).
+> Published to the marketplace from source that was not committed at the
+> time; reconstructed and merged into 1.2.0.
 
 ## [1.0.0] - 2025-12-11
 
 ### Added
 
-- Initial release
-- Web Serial upload support for Arduino boards
-- Serial Monitor with xterm.js terminal emulation
-- Serial Plotter with Chart.js visualization
-- Board Manager for installing/managing board cores
-- Library Manager for installing/managing libraries
-- VS Code commands for opening bridge, selecting boards, compiling
-- Sidebar tree views for status, boards, and sketches
-- Auto-start server option
-- Status bar integration
-- Support for Arduino Uno, Nano, Mega, Leonardo, Uno R4 WiFi
-- Experimental support for ESP32 boards
-
-### Known Issues
-
-- BOSSA upload for Uno R4 may require multiple attempts
-- ESP32 upload is experimental
+- Initial release: Web Serial upload, Serial Monitor (xterm.js), Serial
+  Plotter (Chart.js), Board & Library Managers, VS Code commands and tree
+  views, auto-start server, status bar. Supported boards: Uno, Nano, Mega,
+  Leonardo, Uno R4 WiFi; experimental ESP32.
 
 ## [Unreleased]
 

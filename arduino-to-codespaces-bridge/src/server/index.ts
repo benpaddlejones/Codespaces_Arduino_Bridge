@@ -804,6 +804,14 @@ export class BridgeServer extends EventEmitter {
       });
     });
 
+    // Restart request from the web client's "Restart Bridge" button. The
+    // extension owns the server lifecycle, so respond first and then emit an
+    // event the extension handles by stopping and restarting this server.
+    this.app.post("/api/restart", (_req: Request, res: Response) => {
+      res.json({ success: true, log: "Restarting bridge server..." });
+      setTimeout(() => this.emit("restartRequested"), 100);
+    });
+
     // Board listing
     this.app.get("/api/boards", async (_req: Request, res: Response) => {
       try {

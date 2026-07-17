@@ -1155,6 +1155,10 @@ async function startApp() {
   }
 
   if (appLoadingEl) appLoadingEl.classList.add("hidden");
+
+  // Sync IntelliSense to whatever board is now selected - the config file
+  // may still be generated for a board used in a previous session
+  void updateIntellisenseForBoard(boardSelect.value, false);
 }
 
 if (appLoadingRetryBtn) {
@@ -1217,6 +1221,40 @@ sketchSelect.addEventListener("change", async (e) => {
   updateCompileButtons();
 });
 
+/** @type {string|null} FQBN the IntelliSense config was last generated for */
+let lastIntellisenseFqbn = null;
+
+/**
+ * Regenerate .vscode/c_cpp_properties.json for a board. The SELECTED board
+ * is the single source of truth for IntelliSense - called on manual
+ * selection, auto-detect, and startup. Deduplicates repeat calls for the
+ * same FQBN.
+ * @param {string} fqbn - Fully qualified board name
+ * @param {boolean} [announce=true] - Write a confirmation to the terminal
+ */
+async function updateIntellisenseForBoard(fqbn, announce = true) {
+  if (!fqbn || fqbn === lastIntellisenseFqbn) return;
+  try {
+    const response = await bridgeFetch("/api/intellisense", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fqbn }),
+      timeoutMs: 60000,
+    });
+    if (response.ok) {
+      lastIntellisenseFqbn = fqbn;
+      logger.info(`IntelliSense updated for: ${fqbn}`);
+      if (announce) {
+        terminal.write(`\r\n✨ IntelliSense updated for ${fqbn}\r\n`);
+      }
+    } else {
+      logger.warn("IntelliSense: Failed to update configuration");
+    }
+  } catch (error) {
+    logger.warn("IntelliSense: Error updating configuration", error);
+  }
+}
+
 boardSelect.addEventListener("change", async () => {
   updateCompileButtons();
 
@@ -1227,25 +1265,7 @@ boardSelect.addEventListener("change", async () => {
   }
 
   // Update IntelliSense configuration for the selected board
-  const fqbn = boardSelect.value;
-  if (fqbn) {
-    try {
-      const response = await bridgeFetch("/api/intellisense", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fqbn }),
-        timeoutMs: 60000,
-      });
-      if (response.ok) {
-        logger.info(`IntelliSense updated for: ${fqbn}`);
-        terminal.write(`\r\n✨ IntelliSense updated for ${fqbn}\r\n`);
-      } else {
-        logger.warn("IntelliSense: Failed to update configuration");
-      }
-    } catch (error) {
-      logger.warn("IntelliSense: Error updating configuration", error);
-    }
-  }
+  await updateIntellisenseForBoard(boardSelect.value);
 
   // Show info message for UF2/download boards
   const uploadMode = getBoardUploadMode();
@@ -2169,6 +2189,9 @@ connectBtn.addEventListener("click", async () => {
         boardSelect.value = detectedBoard.fqbn;
         terminal.write(`\r\nAuto-detected board: ${detectedBoard.name}\r\n`);
         updateCompileButtons();
+        // Setting .value programmatically does NOT fire the change event,
+        // so regenerate IntelliSense for the detected board explicitly
+        void updateIntellisenseForBoard(detectedBoard.fqbn);
       } else {
         // The board is recognised by VID/PID but absent from the installed
         // boards list - its platform core is not installed yet.
