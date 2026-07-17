@@ -18,7 +18,7 @@ class StatusItem extends vscode.TreeItem {
     public readonly label: string,
     public readonly value: string,
     public readonly icon?: string,
-    public readonly commandId?: string
+    public readonly commandId?: string,
   ) {
     super(label, vscode.TreeItemCollapsibleState.None);
     this.description = value;
@@ -79,20 +79,20 @@ export class StatusTreeProvider implements vscode.TreeDataProvider<StatusItem> {
       new StatusItem(
         "Server",
         running ? "Running" : "Stopped",
-        running ? "pass" : "circle-slash"
-      )
+        running ? "pass" : "circle-slash",
+      ),
     );
 
     if (running) {
       // Port
       items.push(
-        new StatusItem("Port", this.server.getPort().toString(), "globe")
+        new StatusItem("Port", this.server.getPort().toString(), "globe"),
       );
 
       // Check arduino-cli
       try {
         const port = this.server.getPort();
-        const response = await fetch(`http://localhost:${port}/api/cli/health`);
+        const response = await fetch(`http://127.0.0.1:${port}/api/cli/health`);
         const data = (await response.json()) as {
           available: boolean;
           version?: string;
@@ -102,8 +102,8 @@ export class StatusTreeProvider implements vscode.TreeDataProvider<StatusItem> {
           new StatusItem(
             "Arduino CLI",
             data.available ? `v${data.version}` : "Not found",
-            data.available ? "check" : "warning"
-          )
+            data.available ? "check" : "warning",
+          ),
         );
       } catch {
         items.push(new StatusItem("Arduino CLI", "Unknown", "question"));
@@ -120,7 +120,7 @@ export class StatusTreeProvider implements vscode.TreeDataProvider<StatusItem> {
       running ? "Open Arduino Bridge" : "Start Server",
       running ? "Click to open in browser" : "Click to start",
       running ? "link-external" : "play",
-      running ? "arduinoBridge.openBridge" : "arduinoBridge.startServer"
+      running ? "arduinoBridge.openBridge" : "arduinoBridge.startServer",
     );
     items.push(actionItem);
 

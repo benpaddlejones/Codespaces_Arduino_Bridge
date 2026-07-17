@@ -17,13 +17,13 @@ class BoardItem extends vscode.TreeItem {
   constructor(
     public readonly label: string,
     public readonly fqbn: string,
-    public readonly isSelected: boolean
+    public readonly isSelected: boolean,
   ) {
     super(label, vscode.TreeItemCollapsibleState.None);
     this.description = fqbn;
     this.tooltip = `${label}\nFQBN: ${fqbn}\nClick to select`;
     this.iconPath = new vscode.ThemeIcon(
-      isSelected ? "check" : "circuit-board"
+      isSelected ? "check" : "circuit-board",
     );
     this.command = {
       command: "arduinoBridge.selectThisBoard",
@@ -40,7 +40,7 @@ class BoardItem extends vscode.TreeItem {
 class BoardCategory extends vscode.TreeItem {
   constructor(
     public readonly label: string,
-    public readonly boards: BoardItem[]
+    public readonly boards: BoardItem[],
   ) {
     super(label, vscode.TreeItemCollapsibleState.Expanded);
     this.iconPath = new vscode.ThemeIcon("folder");
@@ -52,9 +52,7 @@ type BoardTreeItem = BoardItem | BoardCategory;
 /**
  * Provides tree items for the boards view
  */
-export class BoardsTreeProvider
-  implements vscode.TreeDataProvider<BoardTreeItem>
-{
+export class BoardsTreeProvider implements vscode.TreeDataProvider<BoardTreeItem> {
   private _onDidChangeTreeData = new vscode.EventEmitter<
     BoardTreeItem | undefined | null | void
   >();
@@ -69,7 +67,7 @@ export class BoardsTreeProvider
     // Register the select board command
     vscode.commands.registerCommand(
       "arduinoBridge.selectThisBoard",
-      this.selectBoard.bind(this)
+      this.selectBoard.bind(this),
     );
   }
 
@@ -89,7 +87,7 @@ export class BoardsTreeProvider
     await config.update(
       "defaultBoard",
       fqbn,
-      vscode.ConfigurationTarget.Workspace
+      vscode.ConfigurationTarget.Workspace,
     );
     vscode.window.showInformationMessage(`Board set to: ${name}`);
     this.refresh();
@@ -131,7 +129,7 @@ export class BoardsTreeProvider
 
         // First, get installed platforms
         const platformsResponse = await fetch(
-          `http://localhost:${port}/api/cli/cores/installed`
+          `http://127.0.0.1:${port}/api/cli/cores/installed`,
         );
         const platformsData = (await platformsResponse.json()) as {
           success: boolean;
@@ -161,7 +159,7 @@ export class BoardsTreeProvider
 
         // Also fetch from /api/boards for any additional board info
         const boardsResponse = await fetch(
-          `http://localhost:${port}/api/boards`
+          `http://127.0.0.1:${port}/api/boards`,
         );
         const boardsData = (await boardsResponse.json()) as {
           success: boolean;
@@ -194,7 +192,7 @@ export class BoardsTreeProvider
         new BoardItem(
           "No boards installed",
           "Install a platform using the Command Palette",
-          false
+          false,
         ),
       ];
     }

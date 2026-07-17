@@ -5,6 +5,53 @@ All notable changes to the "Arduino to Codespaces Bridge" extension will be docu
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.5] - 2026-07-17
+
+### Fixed
+
+- Serial monitor now stays silent during compile and upload. Incoming device
+  output (e.g. plotter/heartbeat lines) previously interleaved with the build
+  log because the terminal echo was wired directly to the serial provider and
+  ignored the paused state, and plain "Compile" never paused at all. The
+  terminal now respects the paused state, `pause()`/`resume()` are
+  reference-counted so a compile nested inside an upload balances correctly,
+  and every compile path pauses the monitor while building
+
+## [1.2.4] - 2026-07-17
+
+### Fixed
+
+- "Failed to load libraries: fetch failed" (and the same failure for the
+  Boards/Status tree views, board selection, compile, and environment sync):
+  the 1.2.1 security change bound the server to IPv4 loopback (`127.0.0.1`),
+  but the extension's internal requests used `http://localhost`, which Node 18+
+  resolves to IPv6 `::1` first — so the connection was refused. All internal
+  extension requests now target `127.0.0.1` to match the server bind. The
+  browser URL opened by "Open Bridge" still uses `localhost` (unchanged)
+
+## [1.2.3] - 2026-07-17
+
+### Fixed
+
+- Sketch selection sent an `undefined` sketch name to the compiler: the web
+  client read the non-existent `relativePath` field from `/api/sketches`
+  (the server returns `path`), so every sketch option carried the literal
+  value `"undefined"` and compiles (e.g. the upload-validation sketch) failed
+  with `Compiling sketch: 'undefined'`. The client now reads `path`, and the
+  compile guard rejects stray `"undefined"`/`"null"` values
+
+## [1.2.2] - 2026-07-17
+
+### Added
+
+- Meta / code-quality test suite (`npm run test:meta`) that guards the
+  extension source: it fails the build if `eslint` or `tsc --noEmit` report
+  problems, if any source file, exported declaration, or public class method is
+  missing a Google-style JSDoc block, or if a contributed command is not
+  registered in code
+- Google-style JSDoc documentation across previously undocumented exports and
+  methods in the config, services, views, and server modules
+
 ## [1.2.1] - 2026-07-17
 
 ### Security

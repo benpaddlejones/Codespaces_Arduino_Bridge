@@ -18,7 +18,7 @@ import { BridgeServer } from "../server";
  */
 export async function compileSketch(
   server: BridgeServer,
-  outputChannel: vscode.OutputChannel
+  outputChannel: vscode.OutputChannel,
 ): Promise<void> {
   // Get active editor
   const editor = vscode.window.activeTextEditor;
@@ -33,7 +33,7 @@ export async function compileSketch(
   // Check if it's an Arduino sketch
   if (!filePath.endsWith(".ino")) {
     vscode.window.showWarningMessage(
-      "Current file is not an Arduino sketch (.ino)"
+      "Current file is not an Arduino sketch (.ino)",
     );
     return;
   }
@@ -44,7 +44,7 @@ export async function compileSketch(
       await server.start();
     } catch (error: any) {
       vscode.window.showErrorMessage(
-        `Failed to start server: ${error.message}`
+        `Failed to start server: ${error.message}`,
       );
       return;
     }
@@ -78,7 +78,7 @@ export async function compileSketch(
 
       try {
         const port = server.getPort();
-        const response = await fetch(`http://localhost:${port}/api/compile`, {
+        const response = await fetch(`http://127.0.0.1:${port}/api/compile`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sketchPath: sketchDir, fqbn }),
@@ -111,7 +111,7 @@ export async function compileSketch(
           vscode.window
             .showInformationMessage(
               `Compilation successful! Open Arduino Bridge to upload.`,
-              "Open Bridge"
+              "Open Bridge",
             )
             .then((selection) => {
               if (selection === "Open Bridge") {
@@ -127,7 +127,7 @@ export async function compileSketch(
           vscode.window
             .showErrorMessage(
               `Compilation failed. Check Output panel for details.`,
-              "Show Output"
+              "Show Output",
             )
             .then((selection) => {
               if (selection === "Show Output") {
@@ -139,6 +139,6 @@ export async function compileSketch(
         outputChannel.appendLine(`Error: ${error.message}`);
         vscode.window.showErrorMessage(`Compilation error: ${error.message}`);
       }
-    }
+    },
   );
 }

@@ -45,6 +45,8 @@ export class SerialManager {
     this.buffer = "";
     /** @type {boolean} */
     this.paused = false;
+    /** @type {number} Nested pause depth; monitor is silent while > 0 */
+    this.pauseDepth = 0;
     /** @type {boolean} */
     this.baudDetectionActive = false;
     /** @type {{line: Function[], baudDetected: Function[]}} */
@@ -97,18 +99,25 @@ export class SerialManager {
 
   /**
    * Pause serial data processing. Data is still received but not emitted.
+   * Reference-counted so nested callers (e.g. a compile inside an upload)
+   * each pause and resume without prematurely un-silencing the monitor.
    * Used during compile/upload to avoid garbled output in the terminal.
    */
   pause() {
+    this.pauseDepth++;
     this.paused = true;
     this.buffer = "";
   }
 
   /**
-   * Resume serial data processing after pause.
+   * Resume serial data processing after pause. Only resumes once every
+   * matching pause() call has been balanced by a resume().
    */
   resume() {
-    this.paused = false;
+    this.pauseDepth = Math.max(0, this.pauseDepth - 1);
+    if (this.pauseDepth === 0) {
+      this.paused = false;
+    }
   }
 
   /**

@@ -725,11 +725,11 @@ async function loadSketches() {
     // Add workspace sketches
     sketches.forEach((sketch) => {
       const option = document.createElement("option");
-      option.value = sketch.relativePath;
+      option.value = sketch.path;
       option.textContent = sketch.name;
       sketchSelect.appendChild(option);
 
-      if (sketch.relativePath === currentSelection) {
+      if (sketch.path === currentSelection) {
         selectionFound = true;
       }
     });
@@ -956,7 +956,7 @@ async function compileSketch(sketchPathOverride = null) {
     terminal.write("\r\nCompile aborted: No board selected\r\n");
     return null;
   }
-  if (!sketchPath) {
+  if (!sketchPath || sketchPath === "undefined" || sketchPath === "null") {
     terminal.write("\r\nCompile aborted: No sketch selected\r\n");
     return null;
   }
@@ -965,6 +965,10 @@ async function compileSketch(sketchPathOverride = null) {
   terminal.write(`\r\n[Debug] Selected Sketch: ${sketchPath}\r\n`);
   terminal.write(`[Debug] Selected Board: ${fqbn}\r\n`);
   terminal.write(`\r\nCompiling ${sketchPath} for ${fqbn}...\r\n`);
+
+  // Silence the serial monitor while compiling so incoming device output
+  // (e.g. plotter/heartbeat lines) doesn't interleave with the build log.
+  serialManager.pause();
 
   try {
     const response = await fetch("/api/compile", {
@@ -1038,6 +1042,9 @@ async function compileSketch(sketchPathOverride = null) {
   } catch (error) {
     terminal.write(`\r\nError: ${error.message}\r\n`);
     return null;
+  } finally {
+    // Balance the pause() above; the outer upload flow keeps its own pause.
+    serialManager.resume();
   }
 }
 
@@ -1838,6 +1845,11 @@ baudSelect.addEventListener("change", async () => {
 
 // Handle incoming data for Terminal
 serialManager.provider.on("data", (data) => {
+  // Stay silent while a compile/upload is in progress so device output
+  // (plotter/heartbeat lines) doesn't interleave with the build log.
+  if (serialManager.paused) {
+    return;
+  }
   terminal.write(data);
 });
 

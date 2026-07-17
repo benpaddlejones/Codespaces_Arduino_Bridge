@@ -285,7 +285,7 @@ export class EnvironmentSyncController {
   ): Promise<Array<{ id: string; installedVersion?: string | null }>> {
     try {
       const response = await fetch(
-        `http://localhost:${port}/api/cli/cores/installed`,
+        `http://127.0.0.1:${port}/api/cli/cores/installed`,
       );
       const data = (await response.json()) as {
         success: boolean;
@@ -316,7 +316,7 @@ export class EnvironmentSyncController {
   ): Promise<Array<{ name: string; installedVersion?: string | null }>> {
     try {
       const response = await fetch(
-        `http://localhost:${port}/api/cli/libraries/installed`,
+        `http://127.0.0.1:${port}/api/cli/libraries/installed`,
       );
       const data = (await response.json()) as {
         success: boolean;
@@ -353,7 +353,7 @@ export class EnvironmentSyncController {
 
     try {
       const response = await fetch(
-        `http://localhost:${port}/api/cli/cores/install`,
+        `http://127.0.0.1:${port}/api/cli/cores/install`,
         {
           method: "POST",
           headers: JSON_HEADERS,
@@ -405,7 +405,7 @@ export class EnvironmentSyncController {
 
     try {
       const response = await fetch(
-        `http://localhost:${port}/api/cli/libraries/install`,
+        `http://127.0.0.1:${port}/api/cli/libraries/install`,
         {
           method: "POST",
           headers: JSON_HEADERS,

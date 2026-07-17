@@ -130,7 +130,7 @@ async function fetchBoards(
 
   try {
     const port = server.getPort();
-    const response = await fetch(`http://localhost:${port}/api/boards`);
+    const response = await fetch(`http://127.0.0.1:${port}/api/boards`);
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);

@@ -118,7 +118,7 @@ export class LibrariesTreeProvider implements vscode.TreeDataProvider<LibrariesT
     try {
       const port = this.server.getPort();
       const response = await fetch(
-        `http://localhost:${port}/api/cli/libraries/installed`,
+        `http://127.0.0.1:${port}/api/cli/libraries/installed`,
       );
       const data = (await response.json()) as {
         success: boolean;
