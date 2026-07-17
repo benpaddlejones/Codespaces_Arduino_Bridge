@@ -873,8 +873,8 @@ export class DFUStrategy {
         "Click \u201cSelect Device\u201d and pick the DFU device (e.g. " +
         "\u201cSantiago DFU\u201d for the R4 Minima). " +
         "If the list is EMPTY on Windows, the WinUSB driver is missing - " +
-        "install it once with Zadig (zadig.akeo.ie): List All Devices \u2192 " +
-        "the DFU device \u2192 WinUSB \u2192 Install. This pairing is only needed once.";
+        "see the Drivers tab for the one-time install (Zadig, zadig.akeo.ie: " +
+        "List All Devices \u2192 the DFU device \u2192 WinUSB \u2192 Install).";
       for (let attempt = 1; attempt <= 2; attempt++) {
         try {
           const device = await window.requestDfuDevice(
@@ -911,23 +911,33 @@ export class DFUStrategy {
           }
           this.log.error(`Manual DFU selection failed: ${error.message}`);
           // An empty chooser on Windows means the WinUSB driver is not
-          // installed for the DFU bootloader - surface the one-time fix
-          // directly in the terminal error instead of a generic message.
+          // installed for the DFU bootloader - show the same driver
+          // guidance popup the Connect button uses, linking to the
+          // Drivers tab, and surface the fix in the terminal error too.
           if (
             error.name === "NotFoundError" &&
             typeof navigator !== "undefined" &&
             /Windows/i.test(navigator.userAgent)
           ) {
+            if (
+              typeof window !== "undefined" &&
+              typeof window.showDriverGuidance === "function"
+            ) {
+              window.showDriverGuidance("No DFU device selected", [
+                "If the device list was EMPTY, Windows is missing the driver for the board's DFU bootloader (one-time setup, needed for all UNO R4 family boards: R4 Minima, R4 WiFi, Nano R4).",
+                "1. Open Device Manager and look for a DFU device (e.g. 'Santiago DFU') with a yellow warning icon.",
+                "2. Install the WinUSB driver with Zadig (zadig.akeo.ie): Options > List All Devices > the DFU device > WinUSB > Install - or install the Arduino IDE with the UNO R4 board package.",
+                "3. Try uploading again - the full steps are on the Drivers tab.",
+                "If you simply cancelled the dialog, dismiss this message.",
+              ]);
+            }
             throw new Error(
               "No DFU device was selected. If the device list was EMPTY, " +
-                "Windows is missing the driver for the board's DFU " +
-                "bootloader (one-time setup, needed for all UNO R4 family " +
-                "boards): open Device Manager and check for a DFU device " +
-                "(e.g. 'Santiago DFU') with a warning icon, then install " +
-                "the WinUSB driver with Zadig (zadig.akeo.ie: Options > " +
-                "List All Devices > the DFU device > WinUSB > Install) or " +
-                "install the Arduino IDE with the UNO R4 board package. " +
-                "Then try uploading again.",
+                "Windows is missing the WinUSB driver for the board's DFU " +
+                "bootloader (one-time setup for all UNO R4 family boards) - " +
+                "see the Drivers tab for install steps (Zadig or the " +
+                "Arduino IDE with the UNO R4 board package), then try " +
+                "uploading again.",
             );
           }
           throw error;

@@ -19,6 +19,7 @@ import { PlotterUI } from "./ui/PlotterUI.js";
 import { BoardManagerUI } from "./ui/BoardManagerUI.js";
 import { LibraryManagerUI } from "./ui/LibraryManagerUI.js";
 import { ReferenceUI } from "./ui/ReferenceUI.js";
+import { DriversUI } from "./ui/DriversUI.js";
 import { trapFocus, releaseFocus } from "./ui/focusTrap.js";
 import { Logger } from "../shared/Logger.js";
 
@@ -244,6 +245,7 @@ const plotter = new PlotterUI("plotter-container");
 const boardManager = new BoardManagerUI("boards-view");
 const libraryManager = new LibraryManagerUI("libraries-view");
 const referenceUI = new ReferenceUI("reference-view");
+const driversUI = new DriversUI("drivers-view");
 
 setupConsoleBridge(terminal);
 
@@ -257,6 +259,7 @@ const uploadManager = new UploadManager();
 boardManager.init();
 libraryManager.init();
 referenceUI.init();
+driversUI.init();
 
 // Set up main navigation view switching
 setupNavigation();
@@ -491,6 +494,22 @@ function showGuidance({ title, lines, actionLabel, onAction }) {
   guidanceActionBtn.addEventListener("click", handleAction);
   guidanceDismissBtn.addEventListener("click", handleDismiss);
   openModal(guidanceModal, guidanceDismissBtn);
+}
+
+// Let upload strategies (which have no access to the UI layer) show the
+// driver guidance popup with an "Open driver guide" action - same dialog
+// the Connect button uses when no serial device is found.
+if (
+  typeof window !== "undefined" &&
+  typeof window.showDriverGuidance !== "function"
+) {
+  window.showDriverGuidance = (title, lines) =>
+    showGuidance({
+      title,
+      lines,
+      actionLabel: "Open driver guide",
+      onAction: () => openViewWithSearch("drivers"),
+    });
 }
 
 /**
@@ -1814,6 +1833,21 @@ function checkBoardMismatch(port, fqbn) {
       return;
     }
 
+    // Generic USB-to-UART bridge chips (CP210x, CH340, FTDI, Prolific)
+    // identify the bridge, NOT the board - countless UNO/Nano clones use
+    // them, so a non-matching VID/PID is expected and proves nothing.
+    // Warning here would be a false alarm on every clone board.
+    const GENERIC_UART_VIDS = [
+      0x10c4, // Silicon Labs CP210x
+      0x1a86, // WCH CH340/CH9102
+      0x0403, // FTDI FT232
+      0x067b, // Prolific PL2303
+    ];
+    if (GENERIC_UART_VIDS.includes(portInfo.usbVendorId)) {
+      resolve(true);
+      return;
+    }
+
     // Mismatch detected - try to find what board IS connected
     const connectedBoard = availableBoards.find((b) => {
       if (!b.vid || !b.pid) return false;
@@ -1821,6 +1855,14 @@ function checkBoardMismatch(port, fqbn) {
       const pMatch = b.pid.some((p) => parseInt(p) === portInfo.usbProductId);
       return vMatch && pMatch;
     });
+
+    // Only warn on a CLEAR mismatch: the connected device is positively
+    // identified as a different known board. An unrecognised VID/PID is
+    // ambiguous (clone chips, bootloader modes), not proof of a mismatch.
+    if (!connectedBoard) {
+      resolve(true);
+      return;
+    }
 
     // Format VID/PID for display
     const vidHex = portInfo.usbVendorId
@@ -1831,9 +1873,7 @@ function checkBoardMismatch(port, fqbn) {
       .toString(16)
       .toUpperCase()
       .padStart(4, "0");
-    const connectedLabel = connectedBoard
-      ? connectedBoard.name
-      : `Unknown device (VID:${vidHex}, PID:${pidHex})`;
+    const connectedLabel = `${connectedBoard.name} (VID:${vidHex}, PID:${pidHex})`;
 
     // Update modal content
     mismatchConnected.textContent = connectedLabel;
@@ -1887,6 +1927,21 @@ connectBtn.addEventListener("click", async () => {
       terminal.write(
         "\r\n[Bridge] Connection cancelled — no serial port selected.\r\n",
       );
+      // The Web Serial picker throws the same error for "user cancelled"
+      // and "the list was empty", so offer driver/cable guidance covering
+      // the empty-list case and let the user dismiss it if they cancelled.
+      showGuidance({
+        title: "No serial device selected",
+        lines: [
+          "If the port list was EMPTY, the computer has not detected the board as a serial device.",
+          "1. Check the USB cable - it must be a DATA cable, not charge-only. The power LED turning on does not prove data works; try a different cable and USB port.",
+          "2. Check the driver - boards using CP210x, CH340 or FTDI chips need a driver installed on THIS computer (see the Drivers tab).",
+          "3. Check the board's firmware/bootloader - a board with corrupted firmware may not appear as a serial device; double-tap RESET to enter the bootloader.",
+          "If you simply cancelled the dialog, dismiss this message.",
+        ],
+        actionLabel: "Open driver guide",
+        onAction: () => openViewWithSearch("drivers"),
+      });
       return;
     }
     logger.error("Port selection failed", error);
@@ -2194,7 +2249,13 @@ function setupNavigation() {
   // Handle hash-based routing (for deep links)
   function handleHashRoute() {
     const hash = window.location.hash.replace("#/", "").replace("#", "");
-    const validViews = ["serial", "boards", "libraries", "reference"];
+    const validViews = [
+      "serial",
+      "boards",
+      "libraries",
+      "reference",
+      "drivers",
+    ];
 
     if (validViews.includes(hash)) {
       const tab = document.querySelector(`.nav-tab[data-view="${hash}"]`);

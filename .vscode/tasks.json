@@ -50,7 +50,7 @@
     {
       "label": "Install Extension",
       "type": "shell",
-      "command": "code --install-extension arduino-to-codespaces-bridge-1.2.23.vsix --force",
+      "command": "code --install-extension arduino-to-codespaces-bridge-1.2.29.vsix --force",
       "options": {
         "cwd": "${workspaceFolder}/arduino-to-codespaces-bridge"
       },

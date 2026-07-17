@@ -5,6 +5,50 @@ All notable changes to the "Arduino to Codespaces Bridge" extension will be docu
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.29] - 2026-07-17
+
+### Changed
+
+- Maintenance release: rebuild of 1.2.28 (Drivers tab, no-device connect
+  guidance, clear-mismatch-only board warning, DFU driver guidance dialog).
+
+## [1.2.28] - 2026-07-17
+
+### Changed
+
+- When the DFU device chooser closes with no device selected on Windows
+  (UNO R4 family uploads), the same driver guidance dialog used by Connect
+  now appears, explaining the missing WinUSB driver with an "Open driver
+  guide" button that jumps to the Drivers tab. The chooser prompt and the
+  terminal error also point to the Drivers tab.
+
+## [1.2.27] - 2026-07-17
+
+### Changed
+
+- The pre-upload board mismatch warning now only appears on a CLEAR
+  mismatch, i.e. when the connected device is positively identified as a
+  different known board. Devices with generic USB-to-UART bridge chips
+  (CP210x, CH340, FTDI, Prolific) and unrecognised VID/PIDs no longer
+  trigger the warning - those IDs identify the bridge chip, not the board,
+  so clone boards were producing false alarms on every upload.
+
+## [1.2.26] - 2026-07-17
+
+### Added
+
+- New **Drivers** tab in the web client: a directory of the USB serial/DFU
+  drivers students may need on the computer running the browser (official
+  Arduino boards, Silicon Labs CP210x, WCH CH340/CH9102, FTDI FT232, UNO R4
+  DFU WinUSB via Zadig) with per-OS (Windows/macOS/Linux) download links to
+  the official vendor sites and step-by-step install instructions, plus a
+  "no serial device found" troubleshooting checklist (data cable, USB port,
+  Device Manager/lsusb checks, firmware/bootloader, dialout group, brltty).
+- Connect now shows a guidance dialog when the serial port chooser closes
+  with no device selected, explaining that an empty list means the computer
+  has not detected the board (check cable, driver, firmware) with a button
+  that opens the Drivers tab.
+
 ## [1.2.23] - 2026-07-17
 
 ### Changed

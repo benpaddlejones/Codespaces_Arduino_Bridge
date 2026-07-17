@@ -126,6 +126,36 @@ After the driver is installed, the first upload shows a one-time USB pairing
 dialog (pick the board's DFU device); every upload after that is fully
 automatic. macOS, Linux, and ChromeOS need no driver.
 
+### CP2102/CH340 board missing from the serial port dialog?
+
+Boards that use a **USB-to-UART bridge chip** (CP2102, CP2102N, CH340,
+FT232 - common on ESP32, NodeMCU, and Nano clones) only appear in Chrome's
+port picker when the operating system has created a serial port for them.
+The bridge does not filter the list - if the board is missing, the OS driver
+is missing or the device failed to enumerate.
+
+**Windows**: open Device Manager. If the device shows under _Other devices_
+or with a yellow warning, install the vendor VCP driver:
+
+- CP2102/CP2102N: [Silicon Labs CP210x VCP driver](https://www.silabs.com/developer-tools/usb-to-uart-bridge-vcp-drivers)
+- CH340/CH341: WCH CH341SER driver
+- After installing, replug the board - it should appear under _Ports (COM & LPT)_.
+
+**Linux/ChromeOS**: the kernel driver is built in, but check:
+
+- Your user is in the `dialout` group (`sudo usermod -a -G dialout $USER`,
+  then log out/in).
+- `brltty` is not claiming the device (a known CP210x conflict on Ubuntu:
+  `sudo apt remove brltty`).
+
+**All platforms**:
+
+- Use a **data** USB cable - charge-only cables power the board but no port
+  ever appears.
+- Some counterfeit CP2102N/CH340 chips enumerate unreliably; try another
+  cable/USB port, or check `dmesg` (Linux) / Device Manager events (Windows)
+  for enumeration errors.
+
 ## License
 
 MIT License - see LICENSE file for details.

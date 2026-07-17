@@ -145,6 +145,9 @@
       <button class="nav-tab" data-view="reference">
         <span class="nav-icon">📖</span> Reference
       </button>
+      <button class="nav-tab" data-view="drivers">
+        <span class="nav-icon">🔌</span> Drivers
+      </button>
     </div>
 
     <!-- Serial Monitor View (Terminal/Plotter) -->
@@ -383,6 +386,20 @@
       <div class="reference-content" id="reference-content">
         <div class="loading-placeholder">Loading Arduino reference...</div>
       </div>
+    </div>
+
+    <!-- Drivers View -->
+    <div id="drivers-view" class="view-container">
+      <div class="manager-header">
+        <h2>USB Drivers & Connection Troubleshooting</h2>
+        <div class="manager-controls">
+          <span class="driver-header-note"
+            >Drivers install on the computer running this browser - not in the
+            Codespace.</span
+          >
+        </div>
+      </div>
+      <div class="reference-content" id="drivers-content"></div>
     </div>
 
     <div class="input-bar">
