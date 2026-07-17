@@ -2,7 +2,7 @@
   "name": "arduino-to-codespaces-bridge",
   "displayName": "Arduino to Codespaces Bridge",
   "description": "Compile and upload Arduino sketches from GitHub Codespaces to physical boards via Web Serial",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "publisher": "benpaddlejones",
   "license": "GPL-3.0",
   "icon": "resources/icons/icon.png",
@@ -323,6 +323,8 @@
     "lint": "eslint src --ext ts",
     "test": "vscode-test",
     "test:intellisense": "node test/intellisense.test.mjs",
+    "test:version": "node test/version.test.mjs",
+    "test:meta": "node test/meta.test.mjs",
     "package": "vsce package",
     "publish": "vsce publish",
     "compile": "tsc -p ./"

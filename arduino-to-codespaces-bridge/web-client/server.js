@@ -9,7 +9,7 @@
  * - Health monitoring and auto-recovery
  *
  * @module server
- * @version 1.0.16
+ * @version Tracks package.json (build version)
  */
 
 import express from "express";
@@ -35,8 +35,13 @@ import {
 // Constants
 // =============================================================================
 
-/** Server version for cache debugging - update when making changes */
-const SERVER_VERSION = "1.0.17";
+/**
+ * Server version — tracks the extension build version (single source of truth:
+ * the extension's package.json), so it always matches the client for a build.
+ */
+const SERVER_VERSION = JSON.parse(
+  fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+).version;
 
 /** Server start time for uptime calculation */
 const SERVER_START_TIME = Date.now();
@@ -477,13 +482,34 @@ for (const method of ["get", "post", "put", "delete", "patch"]) {
   };
 }
 
-app.use(express.json());
+app.use(express.json({ limit: "2mb" }));
+// Security headers + CSRF protection. The web client is served from this same
+// server, so all legitimate API calls are same-origin; no permissive CORS is
+// needed. State-changing requests the browser marks as cross-site (a CSRF
+// attempt) are rejected via the Fetch Metadata Sec-Fetch-Site header. Framing
+// is blocked to prevent clickjacking. Mirrors the shipped extension server.
 app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept",
-  );
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Content-Security-Policy", "frame-ancestors 'none'");
+  res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+
+  const method = req.method.toUpperCase();
+  const mutating =
+    method === "POST" ||
+    method === "PUT" ||
+    method === "PATCH" ||
+    method === "DELETE";
+
+  if (mutating && req.headers["sec-fetch-site"] === "cross-site") {
+    res.status(403).json({
+      success: false,
+      error: "Cross-site requests are not allowed",
+    });
+    return;
+  }
+
   next();
 });
 app.use("/artifacts", express.static(BUILD_ROOT));

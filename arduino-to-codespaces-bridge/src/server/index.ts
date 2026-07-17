@@ -28,7 +28,7 @@
  * - GET  /api/cli/libraries/* - Library management endpoints
  *
  * @module server
- * @version 1.0.16
+ * @version 1.0.18
  */
 
 import * as http from "http";
@@ -86,9 +86,6 @@ interface IndexStatus {
 // Constants
 // =============================================================================
 
-/** Server version */
-const SERVER_VERSION = "1.0.17";
-
 // =============================================================================
 // BridgeServer Class
 // =============================================================================
@@ -114,6 +111,13 @@ export class BridgeServer extends EventEmitter {
   private lastCoreIndexUpdate?: number;
   private lastLibraryIndexUpdate?: number;
   private cachedBoardUrls: string[] = [];
+  /**
+   * Server version, tracking the extension's published version (single source
+   * of truth: package.json). The web client is built with the same value, so
+   * client and server always match for a given build — a mismatch therefore
+   * reliably indicates a stale cached client.
+   */
+  private readonly serverVersion: string;
 
   /**
    * Create a new BridgeServer instance
@@ -128,6 +132,9 @@ export class BridgeServer extends EventEmitter {
     this.context = context;
     this.outputChannel = outputChannel;
     this.app = express();
+
+    // Resolve the build version from package.json (single source of truth).
+    this.serverVersion = this.resolveExtensionVersion(context);
 
     const config = vscode.workspace.getConfiguration("arduinoBridge");
     this.port = config.get("serverPort") || 3000;
@@ -153,11 +160,34 @@ export class BridgeServer extends EventEmitter {
   }
 
   /**
+   * Resolve the extension's published version from package.json. Prefers the
+   * metadata VS Code already loaded (context.extension.packageJSON), falling
+   * back to reading the file directly.
+   */
+  private resolveExtensionVersion(context: vscode.ExtensionContext): string {
+    const fromApi = context.extension?.packageJSON?.version;
+    if (typeof fromApi === "string" && fromApi.length > 0) {
+      return fromApi;
+    }
+    try {
+      const pkgPath = path.join(context.extensionPath, "package.json");
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+      if (typeof pkg.version === "string" && pkg.version.length > 0) {
+        return pkg.version;
+      }
+    } catch {
+      /* fall through to a safe default */
+    }
+    return "0.0.0";
+  }
+
+  /**
    * Set up Express middleware
    */
   private setupMiddleware(): void {
-    // JSON body parsing
-    this.app.use(express.json());
+    // JSON body parsing with an explicit size cap so a hostile/broken client
+    // cannot exhaust memory with a huge payload.
+    this.app.use(express.json({ limit: "2mb" }));
 
     // Request logging
     this.app.use((req: Request, _res: Response, next: NextFunction) => {
@@ -165,16 +195,65 @@ export class BridgeServer extends EventEmitter {
       next();
     });
 
-    // CORS headers for browser access
-    this.app.use((_req: Request, res: Response, next: NextFunction) => {
-      res.header("Access-Control-Allow-Origin", "*");
-      res.header(
-        "Access-Control-Allow-Methods",
-        "GET, POST, PUT, DELETE, OPTIONS",
-      );
-      res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    // Security headers + CSRF protection.
+    //
+    // The web client is served from THIS server, so every legitimate API call
+    // is same-origin and no cross-origin access is required. We therefore:
+    //  - drop the previous permissive CORS policy (Access-Control-Allow-Origin:
+    //    "*"), which allowed any website to read API responses such as the
+    //    workspace sketch listing;
+    //  - reject state-changing requests the browser marks as cross-site. This
+    //    is a CSRF defense based on the Fetch Metadata `Sec-Fetch-Site` header,
+    //    which cross-site JavaScript cannot forge and which the Codespaces
+    //    port-forwarding proxy preserves (unlike Host, which it may rewrite);
+    //  - block framing to prevent clickjacking. The app is only ever used in an
+    //    external Chromium browser, because WebSerial/WebUSB (required for
+    //    uploads) are unavailable inside VS Code's Simple Browser, so this
+    //    never interferes with normal use.
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Referrer-Policy", "no-referrer");
+      res.setHeader("X-Frame-Options", "DENY");
+      res.setHeader("Content-Security-Policy", "frame-ancestors 'none'");
+      res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+
+      const method = req.method.toUpperCase();
+      const mutating =
+        method === "POST" ||
+        method === "PUT" ||
+        method === "PATCH" ||
+        method === "DELETE";
+
+      if (mutating && req.headers["sec-fetch-site"] === "cross-site") {
+        this.log(`Blocked cross-site ${method} ${req.path}`);
+        res.status(403).json({
+          success: false,
+          error: "Cross-site requests are not allowed",
+        });
+        return;
+      }
+
       next();
     });
+  }
+
+  /**
+   * Validate a value before passing it to arduino-cli as an argument.
+   *
+   * Arguments are always passed as an argv array (spawn without a shell), so
+   * shell metacharacters are already inert. This additionally rejects values
+   * that begin with "-" (which arduino-cli could misinterpret as a flag —
+   * "argument injection") and values containing control characters or NUL.
+   */
+  private isSafeCliArg(value: unknown): value is string {
+    return (
+      typeof value === "string" &&
+      value.length > 0 &&
+      value.length <= 200 &&
+      !value.startsWith("-") &&
+      // eslint-disable-next-line no-control-regex
+      !/[\u0000-\u001f]/.test(value)
+    );
   }
 
   /**
@@ -486,7 +565,7 @@ export class BridgeServer extends EventEmitter {
         success: true,
         data: {
           status: "ok",
-          version: SERVER_VERSION,
+          version: this.serverVersion,
           uptime: process.uptime(),
           port: this.port,
         },
@@ -496,7 +575,7 @@ export class BridgeServer extends EventEmitter {
     // Version endpoint
     this.app.get("/api/version", (_req: Request, res: Response) => {
       res.json({
-        version: SERVER_VERSION,
+        version: this.serverVersion,
         platform: process.platform,
         node: process.version,
       });
@@ -523,6 +602,11 @@ export class BridgeServer extends EventEmitter {
       async (req: Request, res: Response) => {
         try {
           const fqbn = decodeURIComponent(req.params.fqbn);
+          if (!this.isSafeCliArg(fqbn)) {
+            return res
+              .status(400)
+              .json({ success: false, error: "Invalid board identifier" });
+          }
           const details = await this.getBoardDetails(fqbn);
           res.json(details);
         } catch (error: any) {
@@ -546,6 +630,11 @@ export class BridgeServer extends EventEmitter {
       try {
         // The web client sends "path"; the extension command sends "sketchPath"
         const { fqbn } = req.body;
+        if (fqbn !== undefined && !this.isSafeCliArg(fqbn)) {
+          return res
+            .status(400)
+            .json({ success: false, error: "Invalid board identifier" });
+        }
         let sketchPath: string | undefined =
           req.body.sketchPath || req.body.path;
         if (!sketchPath) {
@@ -601,6 +690,11 @@ export class BridgeServer extends EventEmitter {
             .status(400)
             .json({ success: false, error: "fqbn is required" });
         }
+        if (!this.isSafeCliArg(fqbn)) {
+          return res
+            .status(400)
+            .json({ success: false, error: "Invalid board identifier" });
+        }
 
         const result = await this.generateIntelliSense(fqbn);
         if (!result.success) {
@@ -620,6 +714,12 @@ export class BridgeServer extends EventEmitter {
     // Get compiled HEX file
     this.app.get("/api/hex/:sketchName", (req: Request, res: Response) => {
       const sketchName = req.params.sketchName;
+      // Prevent path traversal: the sketch name is used to build a filesystem
+      // path, so restrict it to a single safe path segment.
+      if (!/^[A-Za-z0-9_.-]+$/.test(sketchName) || sketchName.includes("..")) {
+        res.status(400).json({ success: false, error: "Invalid sketch name" });
+        return;
+      }
       const hexPath = path.join(
         this.buildRoot,
         sketchName,
@@ -755,6 +855,12 @@ export class BridgeServer extends EventEmitter {
             .json({ success: false, urls: [], error: "Invalid URL format" });
         }
 
+        if (!this.isSafeCliArg(url)) {
+          return res
+            .status(400)
+            .json({ success: false, urls: [], error: "Invalid URL format" });
+        }
+
         const result = await this.runCliCommand(
           ["config", "add", "board_manager.additional_urls", url],
           { addJson: false, timeoutMs: 10_000 },
@@ -781,6 +887,11 @@ export class BridgeServer extends EventEmitter {
           return res
             .status(400)
             .json({ success: false, urls: [], error: "URL is required" });
+        }
+        if (!this.isSafeCliArg(url)) {
+          return res
+            .status(400)
+            .json({ success: false, urls: [], error: "Invalid URL format" });
         }
 
         const result = await this.runCliCommand(
@@ -892,6 +1003,16 @@ export class BridgeServer extends EventEmitter {
             .status(400)
             .json({ success: false, error: "platformId is required" });
         }
+        if (
+          !this.isSafeCliArg(platformId) ||
+          (version !== undefined &&
+            version !== "" &&
+            !this.isSafeCliArg(version))
+        ) {
+          return res
+            .status(400)
+            .json({ success: false, error: "Invalid platform identifier" });
+        }
 
         const platformSpec = version ? `${platformId}@${version}` : platformId;
         const result = await this.runCliCommand(
@@ -917,6 +1038,11 @@ export class BridgeServer extends EventEmitter {
             .status(400)
             .json({ success: false, error: "platformId is required" });
         }
+        if (!this.isSafeCliArg(platformId)) {
+          return res
+            .status(400)
+            .json({ success: false, error: "Invalid platform identifier" });
+        }
 
         const result = await this.runCliCommand(
           ["core", "upgrade", platformId],
@@ -937,6 +1063,11 @@ export class BridgeServer extends EventEmitter {
           return res
             .status(400)
             .json({ success: false, error: "platformId is required" });
+        }
+        if (!this.isSafeCliArg(platformId)) {
+          return res
+            .status(400)
+            .json({ success: false, error: "Invalid platform identifier" });
         }
 
         const result = await this.runCliCommand(
@@ -1099,6 +1230,16 @@ export class BridgeServer extends EventEmitter {
             .status(400)
             .json({ success: false, error: "Library name is required" });
         }
+        if (
+          !this.isSafeCliArg(name) ||
+          (version !== undefined &&
+            version !== "" &&
+            !this.isSafeCliArg(version))
+        ) {
+          return res
+            .status(400)
+            .json({ success: false, error: "Invalid library name" });
+        }
 
         const libSpec = version ? `${name}@${version}` : name;
         const args = ["lib", "install", libSpec];
@@ -1129,6 +1270,11 @@ export class BridgeServer extends EventEmitter {
             .status(400)
             .json({ success: false, error: "Library name is required" });
         }
+        if (!this.isSafeCliArg(name)) {
+          return res
+            .status(400)
+            .json({ success: false, error: "Invalid library name" });
+        }
 
         const result = await this.runCliCommand(["lib", "upgrade", name], {
           addJson: false,
@@ -1149,6 +1295,11 @@ export class BridgeServer extends EventEmitter {
           return res
             .status(400)
             .json({ success: false, error: "Library name is required" });
+        }
+        if (!this.isSafeCliArg(name)) {
+          return res
+            .status(400)
+            .json({ success: false, error: "Invalid library name" });
         }
 
         // Get dependencies of the library being uninstalled
@@ -1523,6 +1674,12 @@ export class BridgeServer extends EventEmitter {
     let fullSketchPath = sketchPath;
     if (!path.isAbsolute(sketchPath)) {
       fullSketchPath = path.join(this.workspaceRoot, sketchPath);
+      // A relative path must stay inside the workspace; reject "../" escapes.
+      const root = path.resolve(this.workspaceRoot);
+      const resolved = path.resolve(fullSketchPath);
+      if (resolved !== root && !resolved.startsWith(root + path.sep)) {
+        return { success: false, error: "Sketch path escapes the workspace" };
+      }
     }
 
     // Check if sketch exists
@@ -1734,7 +1891,10 @@ export class BridgeServer extends EventEmitter {
 
     await new Promise<void>((resolve, reject) => {
       const tryPort = (port: number, attemptsLeft: number): void => {
-        const server = this.app.listen(port);
+        // Bind to loopback only. VS Code / Codespaces port-forwarding connects
+        // over localhost, so forwarding still works, while the server is not
+        // exposed to the local network (or other containers).
+        const server = this.app.listen(port, "127.0.0.1");
         this.server = server;
 
         const handleError = (error: NodeJS.ErrnoException): void => {

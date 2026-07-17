@@ -9,7 +9,7 @@
  * - Global error handling and resilience
  *
  * @module client/main
- * @version 1.0.16
+ * @version Tracks package.json (build version)
  */
 
 import { SerialManager } from "./services/SerialManager.js";
@@ -29,8 +29,13 @@ import { Logger } from "../shared/Logger.js";
 /** @type {Logger} Client-side logger for structured logging */
 const logger = new Logger("Client");
 
-/** Client version for cache debugging - update when making changes */
-const CLIENT_VERSION = "1.0.17";
+/* global __APP_VERSION__ */
+/**
+ * Client version — injected from package.json at build time by Vite (see
+ * vite.config.js). Always equals the build version, so it matches the server
+ * unless a stale client bundle is being served from cache.
+ */
+const CLIENT_VERSION = __APP_VERSION__;
 
 /** Default baud rate for serial connections */
 const DEFAULT_BAUD_RATE = 115200;

@@ -5,6 +5,29 @@ All notable changes to the "Arduino to Codespaces Bridge" extension will be docu
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-07-17
+
+### Security
+
+- CSRF protection: state-changing API requests (`POST`/`PUT`/`PATCH`/`DELETE`)
+  are now rejected when the browser reports them as cross-site
+  (`Sec-Fetch-Site: cross-site`), blocking hostile websites from driving
+  `arduino-cli` (core/library install/uninstall, board-URL changes, compiles)
+  via the local server
+- Removed the permissive `Access-Control-Allow-Origin: *` CORS policy; the web
+  client is same-origin, so cross-origin sites can no longer read API responses
+  (e.g. the workspace sketch listing)
+- Added hardening HTTP headers: `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy: no-referrer`, `Cross-Origin-Resource-Policy: same-origin`,
+  and anti-clickjacking `X-Frame-Options: DENY` + CSP `frame-ancestors 'none'`
+- Argument-injection guard for all values passed to `arduino-cli` (FQBN,
+  platform/library names and versions, board-manager URLs): values beginning
+  with `-` or containing control characters are rejected
+- Path-traversal guards: `/api/hex/:sketchName` accepts only a safe path
+  segment, and relative compile paths must stay inside the workspace
+- The extension server now binds to loopback (`127.0.0.1`) instead of all
+  interfaces, and the JSON body parser is capped at 2 MB
+
 ## [1.2.0] - 2026-07-05
 
 > This release merges the previously-unpublished source of the 1.1.0/1.1.1
