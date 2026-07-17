@@ -5,6 +5,20 @@ All notable changes to the "Arduino to Codespaces Bridge" extension will be docu
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.6] - 2026-07-17
+
+### Fixed
+
+- DFU upload (Arduino UNO R4 Minima/Nano R4/Portenta/Giga/Nicla/Opta) failed
+  with `SecurityError: Failed to execute 'requestDevice' on 'USB': Must be
+handling a user gesture` when no device was previously paired. Compile &
+  Upload awaits a multi-second compile before the upload step, which consumes
+  the original button-click gesture, so the direct `navigator.usb.requestDevice()`
+  call in the DFU prepare step was rejected. The initial DFU device request now
+  routes through the existing `requestDfuDevice` modal, whose own button click
+  supplies a fresh user gesture (the same pattern already used when re-selecting
+  the bootloader device)
+
 ## [1.2.5] - 2026-07-17
 
 ### Fixed

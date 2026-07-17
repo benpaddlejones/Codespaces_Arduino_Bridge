@@ -470,18 +470,32 @@ export class DFUStrategy {
       );
       if (!this.device) {
         this.log.info("No paired device found, requesting user selection...");
-        this.log.warn(
-          "Note: WebUSB requires user gesture. If this fails, use the Upload button.",
-        );
-        this.device = await navigator.usb.requestDevice({
-          filters: [
-            { vendorId: this.config.vid, productId: this.config.bootloaderPid },
-            {
-              vendorId: this.config.vid,
-              productId: this.config.applicationPid,
-            },
-          ],
-        });
+        const filters = [
+          { vendorId: this.config.vid, productId: this.config.bootloaderPid },
+          { vendorId: this.config.vid, productId: this.config.applicationPid },
+        ];
+        // navigator.usb.requestDevice() must run inside a user gesture. The
+        // compile step before upload consumes the original button-click
+        // gesture, so route through the modal helper whose own button click
+        // provides a fresh gesture. Fall back to a direct request only when
+        // the helper is unavailable.
+        if (
+          typeof window !== "undefined" &&
+          typeof window.requestDfuDevice === "function"
+        ) {
+          this.device = await window.requestDfuDevice(
+            filters,
+            "Click below, then choose the Arduino DFU device in the USB chooser.",
+          );
+        } else {
+          this.log.warn(
+            "Note: WebUSB requires user gesture. If this fails, use the Upload button.",
+          );
+          this.device = await navigator.usb.requestDevice({ filters });
+        }
+        if (typeof window !== "undefined") {
+          window._dfuDevice = this.device;
+        }
       }
       this.log.success(
         `WebUSB device acquired: ${this.device.productName || "DFU Device"}`,
