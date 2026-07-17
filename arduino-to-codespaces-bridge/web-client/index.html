@@ -9,6 +9,24 @@
     <link rel="stylesheet" href="/src/client/style.css" />
   </head>
   <body>
+    <!-- Startup gate: shown until the bridge server answers the boards and
+         sketches APIs, so users never interact with empty dropdowns -->
+    <div id="appLoading" class="app-loading">
+      <img
+        src="/logo.png"
+        alt="Arduino to Codespaces Bridge"
+        width="72"
+        height="72"
+      />
+      <div class="app-loading-spinner"></div>
+      <div id="appLoadingStatus" class="app-loading-status">
+        Starting Arduino Bridge…
+      </div>
+      <button id="appLoadingRetry" class="app-loading-retry" hidden>
+        Retry
+      </button>
+    </div>
+
     <div class="header">
       <div class="branding">
         <img
@@ -216,27 +234,10 @@
               <div class="empty-urls">Loading...</div>
             </div>
             <div class="common-urls">
-              <p class="common-urls-title">Common Board URLs:</p>
-              <ul class="common-urls-list">
-                <li>
-                  <code
-                    >https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json</code
-                  >
-                  - ESP32
-                </li>
-                <li>
-                  <code
-                    >https://arduino.esp8266.com/stable/package_esp8266com_index.json</code
-                  >
-                  - ESP8266
-                </li>
-                <li>
-                  <code
-                    >https://adafruit.github.io/arduino-board-index/package_adafruit_index.json</code
-                  >
-                  - Adafruit
-                </li>
-              </ul>
+              <p class="common-urls-title">
+                Common board packages - one click to add:
+              </p>
+              <div id="board-url-presets"></div>
             </div>
           </div>
         </div>

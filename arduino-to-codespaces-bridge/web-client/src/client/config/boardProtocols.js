@@ -352,6 +352,12 @@ export const BOARD_PROTOCOL_MAP = {
   "arduino:samd:mkr1000": makeSamd21Config([0x004e, 0x024e]),
   "arduino:samd:mkrzero": makeSamd21Config([0x004f]),
   "arduino:samd:mkrwifi1010": makeSamd21Config([0x0054]),
+  "arduino:samd:mkrfox1200": makeSamd21Config([0x0050]),
+  "arduino:samd:mkrwan1300": makeSamd21Config([0x0053]),
+  "arduino:samd:mkrwan1310": makeSamd21Config([0x0059]),
+  "arduino:samd:mkrgsm1400": makeSamd21Config([0x0052]),
+  "arduino:samd:mkrnb1500": makeSamd21Config([0x0055]),
+  "arduino:samd:mkrvidor4000": makeSamd21Config([0x0056]),
   "arduino:samd:nano_33_iot": makeSamd21Config([0x0057]),
   "arduino:samd:arduino_zero_native": makeSamd21Config([0x004d, 0x024d]),
 

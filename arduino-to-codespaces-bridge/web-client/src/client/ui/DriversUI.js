@@ -181,6 +181,39 @@ const DRIVER_DATA = [
     ],
   },
   {
+    id: "teensy",
+    icon: "🎛️",
+    name: "PJRC Teensy (4.x / 3.x)",
+    appliesTo:
+      "Teensy 4.1, 4.0, 3.x boards (VID 0x16C0) - serial monitor works everywhere; uploads use the HalfKay HID bootloader",
+    hint: "No serial port AT ALL? On a Teensy the USB type is COMPILED INTO the sketch - a factory-fresh board runs the blink demo, which has no USB Serial, so nothing appears in any port list (this is not a driver problem). Flash any sketch with USB Type 'Serial' once using Arduino IDE + Teensyduino / Teensy Loader on a host PC; after that the port appears normally. Uploads from this app are also limited: HalfKay is USB HID, which Web Serial cannot talk to.",
+    os: [
+      {
+        os: "Windows",
+        status: "No driver needed (Windows 10/11)",
+        steps: [
+          "Teensy appears under 'Ports (COM & LPT)' as USB Serial using the built-in usbser.sys.",
+          "Only Windows 7/8 needed PJRC's old serial installer (bundled with Teensyduino).",
+        ],
+      },
+      {
+        os: "macOS",
+        status: "No driver needed",
+        steps: ["Port appears as /dev/cu.usbmodem*."],
+      },
+      {
+        os: "Linux / ChromeOS",
+        status: "udev rules required for uploads",
+        url: "https://www.pjrc.com/teensy/00-teensy.rules",
+        urlLabel: "00-teensy.rules (pjrc.com)",
+        steps: [
+          "The serial monitor works out of the box (/dev/ttyACM*).",
+          "For uploads, download 00-teensy.rules and copy it to /etc/udev/rules.d/, then replug the board - without it the HID bootloader is only accessible as root.",
+        ],
+      },
+    ],
+  },
+  {
     id: "r4-winusb",
     icon: "🛠️",
     name: "UNO R4 family DFU upload driver (WinUSB via Zadig)",

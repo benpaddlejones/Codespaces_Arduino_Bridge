@@ -12,6 +12,47 @@ import { Logger } from "../../shared/Logger.js";
 /** @type {Logger} */
 const logger = new Logger("BoardManager");
 
+/**
+ * Curated third-party board package indexes offered as one-click presets in
+ * the Additional Board URLs modal. Same URLs users would paste into the
+ * Arduino IDE's "Additional boards manager URLs" preference.
+ * @type {{name: string, url: string}[]}
+ */
+const COMMON_BOARD_PACKAGES = [
+  {
+    name: "Teensy (PJRC)",
+    url: "https://www.pjrc.com/teensy/package_teensy_index.json",
+  },
+  {
+    name: "ESP32 (Espressif)",
+    url: "https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json",
+  },
+  {
+    name: "ESP8266",
+    url: "https://arduino.esp8266.com/stable/package_esp8266com_index.json",
+  },
+  {
+    name: "Raspberry Pi Pico / RP2040 (earlephilhower)",
+    url: "https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json",
+  },
+  {
+    name: "Adafruit boards",
+    url: "https://adafruit.github.io/arduino-board-index/package_adafruit_index.json",
+  },
+  {
+    name: "SparkFun boards",
+    url: "https://raw.githubusercontent.com/sparkfun/Arduino_Boards/main/IDE_Board_Manager/package_sparkfun_index.json",
+  },
+  {
+    name: "Seeed Studio boards",
+    url: "https://files.seeedstudio.com/arduino/package_seeeduino_boards_index.json",
+  },
+  {
+    name: "STM32 (STM32duino)",
+    url: "https://github.com/stm32duino/BoardManagerFiles/raw/main/package_stmicroelectronics_index.json",
+  },
+];
+
 export class BoardManagerUI {
   constructor(containerId) {
     this.containerId = containerId;
@@ -59,6 +100,7 @@ export class BoardManagerUI {
       // URL modal elements
       urlModal: document.getElementById("board-url-modal"),
       urlList: document.getElementById("board-url-list"),
+      urlPresets: document.getElementById("board-url-presets"),
       urlInput: document.getElementById("board-url-input"),
       addUrlBtn: document.getElementById("add-board-url"),
       closeUrlModal: document.getElementById("close-board-url-modal"),
@@ -120,6 +162,14 @@ export class BoardManagerUI {
       if (btn) {
         const url = btn.dataset.url;
         this.removeUrl(url);
+      }
+    });
+
+    // Delegate one-click preset add buttons
+    this.elements.urlPresets?.addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-action='add-preset']");
+      if (btn) {
+        this.addUrl(btn.dataset.url);
       }
     });
 
@@ -231,7 +281,7 @@ export class BoardManagerUI {
     this.setLoading(true);
     try {
       const res = await fetch(
-        `/api/cli/cores/search?q=${encodeURIComponent(this.searchQuery)}`
+        `/api/cli/cores/search?q=${encodeURIComponent(this.searchQuery)}`,
       );
       const data = await res.json();
 
@@ -261,7 +311,7 @@ export class BoardManagerUI {
 
       if (data.success) {
         this.appendProgressLog(
-          `\n✓ Index updated successfully in ${data.duration.toFixed(1)}s\n`
+          `\n✓ Index updated successfully in ${data.duration.toFixed(1)}s\n`,
         );
         this.loadIndexStatus();
         // Refresh the list
@@ -272,7 +322,7 @@ export class BoardManagerUI {
         }
       } else {
         this.appendProgressLog(
-          `\n✗ Update failed: ${data.error || "Unknown error"}\n`
+          `\n✗ Update failed: ${data.error || "Unknown error"}\n`,
         );
       }
     } catch (err) {
@@ -291,7 +341,7 @@ export class BoardManagerUI {
     this.appendProgressLog(
       `${actionLabels[action]} ${platformId}${
         version ? "@" + version : ""
-      }...\n`
+      }...\n`,
     );
 
     try {
@@ -314,7 +364,7 @@ export class BoardManagerUI {
 
       if (data.success) {
         this.appendProgressLog(
-          `\n✓ ${action} completed in ${data.duration.toFixed(1)}s\n`
+          `\n✓ ${action} completed in ${data.duration.toFixed(1)}s\n`,
         );
         // Refresh the list
         if (this.searchQuery) {
@@ -324,7 +374,7 @@ export class BoardManagerUI {
         }
       } else {
         this.appendProgressLog(
-          `\n✗ ${action} failed: ${data.error || "Unknown error"}\n`
+          `\n✗ ${action} failed: ${data.error || "Unknown error"}\n`,
         );
       }
     } catch (err) {
@@ -393,12 +443,12 @@ export class BoardManagerUI {
 
     return `
       <div class="platform-card ${isInstalled ? "installed" : ""}" data-id="${
-      platform.id
-    }">
+        platform.id
+      }">
         <div class="platform-header">
           <h3>${this.escapeHtml(platform.name)}</h3>
           <span class="maintainer">by ${this.escapeHtml(
-            platform.maintainer
+            platform.maintainer,
           )}</span>
         </div>
         <div class="platform-id">${this.escapeHtml(platform.id)}</div>
@@ -410,7 +460,7 @@ export class BoardManagerUI {
               .slice(0, 5)
               .map(
                 (b) =>
-                  `<span class="board-chip">${this.escapeHtml(b.name)}</span>`
+                  `<span class="board-chip">${this.escapeHtml(b.name)}</span>`,
               )
               .join("")}
             ${
@@ -433,7 +483,7 @@ export class BoardManagerUI {
                     v === platform.latestVersion ? "selected" : ""
                   }>${v}${
                     v === platform.latestVersion ? " (latest)" : ""
-                  }</option>`
+                  }</option>`,
               )
               .join("")}
           </select>
@@ -547,27 +597,54 @@ export class BoardManagerUI {
           <p class="url-hint">Add URLs for third-party boards like ESP32, ESP8266, etc.</p>
         </div>
       `;
-      return;
-    }
-
-    this.elements.urlList.innerHTML = this.additionalUrls
-      .map(
-        (url) => `
+    } else {
+      this.elements.urlList.innerHTML = this.additionalUrls
+        .map(
+          (url) => `
         <div class="url-item">
           <span class="url-text" title="${this.escapeHtml(
-            url
+            url,
           )}">${this.escapeHtml(url)}</span>
           <button class="btn-remove-url" data-action="remove-url" data-url="${this.escapeHtml(
-            url
+            url,
           )}" title="Remove URL">×</button>
         </div>
-      `
-      )
-      .join("");
+      `,
+        )
+        .join("");
+    }
+
+    this.renderUrlPresets();
   }
 
-  async addUrl() {
-    const url = this.elements.urlInput?.value.trim();
+  /**
+   * Render the curated one-click board package presets, marking entries
+   * that are already configured.
+   */
+  renderUrlPresets() {
+    if (!this.elements.urlPresets) return;
+
+    this.elements.urlPresets.innerHTML = COMMON_BOARD_PACKAGES.map((preset) => {
+      const added = this.additionalUrls.includes(preset.url);
+      return `
+        <div class="url-preset-item">
+          <span class="url-preset-name" title="${this.escapeHtml(
+            preset.url,
+          )}">${this.escapeHtml(preset.name)}</span>
+          ${
+            added
+              ? '<span class="url-preset-added">✓ Added</span>'
+              : `<button class="btn-add-preset" data-action="add-preset" data-url="${this.escapeHtml(
+                  preset.url,
+                )}">Add</button>`
+          }
+        </div>
+      `;
+    }).join("");
+  }
+
+  async addUrl(presetUrl = null) {
+    const url = presetUrl || this.elements.urlInput?.value.trim();
     if (!url) return;
 
     // Basic URL validation

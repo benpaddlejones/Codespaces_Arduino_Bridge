@@ -798,11 +798,13 @@ async function loadBoards() {
     });
 
     setBridgeStatus({ online: true });
+    return true;
   } catch (error) {
     logger.error("Error loading boards", error);
     handleBridgeError("Load boards", error);
     boardSelect.innerHTML =
       '<option value="arduino:avr:uno">Arduino Uno (Fallback)</option>';
+    return false;
   }
 }
 
@@ -852,9 +854,11 @@ async function loadSketches() {
     if (selectionFound) {
       sketchSelect.value = currentSelection;
     }
+    return true;
   } catch (error) {
     logger.error("Error loading sketches", error);
     handleBridgeError("Load sketches", error);
+    return false;
   }
 }
 
@@ -925,9 +929,13 @@ if (includeExamplesCheck) {
 
 // Initialize - load boards and sketches
 async function initialize() {
-  await Promise.all([loadBoards(), loadSketches()]);
+  const [boardsOk, sketchesOk] = await Promise.all([
+    loadBoards(),
+    loadSketches(),
+  ]);
   updateCompileButtons();
   void checkPlatformsInstalled();
+  return boardsOk && sketchesOk;
 }
 
 /**
@@ -960,7 +968,75 @@ async function checkPlatformsInstalled() {
   }
 }
 
-initialize();
+// ---------------------------------------------------------------------------
+// Startup gate: hold the UI behind a loading overlay until the bridge server
+// is up AND the boards + sketches lists have loaded, so users never interact
+// with empty dropdowns while the server is still starting.
+// ---------------------------------------------------------------------------
+const appLoadingEl = document.getElementById("appLoading");
+const appLoadingStatusEl = document.getElementById("appLoadingStatus");
+const appLoadingRetryBtn = document.getElementById("appLoadingRetry");
+
+function setStartupStatus(text) {
+  if (appLoadingStatusEl) appLoadingStatusEl.textContent = text;
+}
+
+/**
+ * Poll the lightweight version endpoint until the bridge server answers.
+ * @param {number} maxWaitMs - Give up after this long
+ * @returns {Promise<boolean>} True when the server responded
+ */
+async function waitForBridgeServer(maxWaitMs = 60000) {
+  const start = Date.now();
+  let attempt = 0;
+  while (Date.now() - start < maxWaitMs) {
+    attempt++;
+    try {
+      const res = await fetch("/api/version");
+      if (res.ok) return true;
+    } catch (e) {
+      // Server not accepting connections yet - keep waiting
+    }
+    setStartupStatus(
+      `Waiting for the bridge server to start… (attempt ${attempt})`,
+    );
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  return false;
+}
+
+async function startApp() {
+  if (appLoadingRetryBtn) appLoadingRetryBtn.hidden = true;
+  if (appLoadingEl) appLoadingEl.classList.remove("hidden");
+  setStartupStatus("Connecting to the bridge server…");
+
+  const serverUp = await waitForBridgeServer();
+  if (!serverUp) {
+    setStartupStatus(
+      "The bridge server is not responding. Make sure the Arduino Bridge extension is running, then retry.",
+    );
+    if (appLoadingRetryBtn) appLoadingRetryBtn.hidden = false;
+    return;
+  }
+
+  setStartupStatus("Loading boards and sketches…");
+  const ready = await initialize();
+  if (!ready) {
+    setStartupStatus(
+      "Could not load the boards or sketches list from the bridge server. Retry in a moment.",
+    );
+    if (appLoadingRetryBtn) appLoadingRetryBtn.hidden = false;
+    return;
+  }
+
+  if (appLoadingEl) appLoadingEl.classList.add("hidden");
+}
+
+if (appLoadingRetryBtn) {
+  appLoadingRetryBtn.addEventListener("click", () => void startApp());
+}
+
+startApp();
 
 // Check if selected board uses UF2 download mode (no serial upload)
 function getBoardUploadMode() {
@@ -1092,8 +1168,6 @@ async function compileSketch(sketchPathOverride = null) {
   }
 
   logger.info(`Compiling sketch: '${sketchPath}' for board: '${fqbn}'`);
-  terminal.write(`\r\n[Debug] Selected Sketch: ${sketchPath}\r\n`);
-  terminal.write(`[Debug] Selected Board: ${fqbn}\r\n`);
   terminal.write(`\r\nCompiling ${sketchPath} for ${fqbn}...\r\n`);
 
   // Silence the serial monitor while compiling so incoming device output
@@ -1585,8 +1659,6 @@ compileUploadBtn.addEventListener("click", async () => {
     const artifactUrl = await compileSketch();
     if (!artifactUrl) return;
 
-    terminal.write(`\r\n[Debug] Artifact URL: ${artifactUrl}\r\n`);
-
     // 2. Download the firmware file
     try {
       terminal.write("Preparing firmware for download...\r\n");
@@ -1665,8 +1737,6 @@ compileUploadBtn.addEventListener("click", async () => {
     terminal.write("[Serial Monitor resumed]\r\n");
     return;
   }
-
-  terminal.write(`\r\n[Debug] Artifact URL: ${artifactUrl}\r\n`);
 
   // 2. Download Firmware
   let firmwareData;

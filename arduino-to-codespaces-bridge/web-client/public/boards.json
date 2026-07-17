@@ -34,37 +34,79 @@
       "name": "Arduino Leonardo",
       "fqbn": "arduino:avr:leonardo",
       "vid": ["0x2341"],
-      "pid": ["0x8036"]
+      "pid": ["0x8036", "0x0036"]
     },
     {
       "name": "Arduino Micro",
       "fqbn": "arduino:avr:micro",
       "vid": ["0x2341"],
-      "pid": ["0x8037"]
+      "pid": ["0x8037", "0x0037"]
     },
     {
       "name": "Arduino MKR1000",
       "fqbn": "arduino:samd:mkr1000",
       "vid": ["0x2341"],
-      "pid": ["0x804e"]
+      "pid": ["0x804e", "0x004e", "0x824e", "0x024e"]
+    },
+    {
+      "name": "Arduino MKR Zero",
+      "fqbn": "arduino:samd:mkrzero",
+      "vid": ["0x2341"],
+      "pid": ["0x804f", "0x004f"]
     },
     {
       "name": "Arduino MKR WiFi 1010",
       "fqbn": "arduino:samd:mkrwifi1010",
       "vid": ["0x2341"],
-      "pid": ["0x8054"]
+      "pid": ["0x8054", "0x0054"]
+    },
+    {
+      "name": "Arduino MKR FOX 1200",
+      "fqbn": "arduino:samd:mkrfox1200",
+      "vid": ["0x2341"],
+      "pid": ["0x8050", "0x0050"]
+    },
+    {
+      "name": "Arduino MKR WAN 1300",
+      "fqbn": "arduino:samd:mkrwan1300",
+      "vid": ["0x2341"],
+      "pid": ["0x8053", "0x0053"]
+    },
+    {
+      "name": "Arduino MKR WAN 1310",
+      "fqbn": "arduino:samd:mkrwan1310",
+      "vid": ["0x2341"],
+      "pid": ["0x8059", "0x0059"]
+    },
+    {
+      "name": "Arduino MKR GSM 1400",
+      "fqbn": "arduino:samd:mkrgsm1400",
+      "vid": ["0x2341"],
+      "pid": ["0x8052", "0x0052"]
+    },
+    {
+      "name": "Arduino MKR NB 1500",
+      "fqbn": "arduino:samd:mkrnb1500",
+      "vid": ["0x2341"],
+      "pid": ["0x8055", "0x0055"]
+    },
+    {
+      "name": "Arduino MKR Vidor 4000",
+      "fqbn": "arduino:samd:mkrvidor4000",
+      "vid": ["0x2341"],
+      "pid": ["0x8056", "0x0056"]
     },
     {
       "name": "Arduino Nano 33 IoT",
       "fqbn": "arduino:samd:nano_33_iot",
       "vid": ["0x2341"],
-      "pid": ["0x8057"]
+      "pid": ["0x8057", "0x0057"]
     },
     {
       "name": "Arduino Zero (Native USB Port)",
       "fqbn": "arduino:samd:arduino_zero_native",
       "vid": ["0x2341"],
-      "pid": ["0x804d"]
+      "pid": ["0x804d", "0x004d", "0x824d", "0x024d"]
     },
     {
       "name": "Arduino Nano ESP32",

@@ -409,16 +409,9 @@ export class BOSSAStrategy {
         const remaining = timeoutMs - (Date.now() - startTime);
         const waitTime = Math.min(remaining, 30);
 
-        const timeoutPromise = new Promise((resolve) =>
-          setTimeout(() => resolve({ timeout: true }), waitTime),
-        );
+        const readResult = await bossa.readChunk(waitTime);
 
-        const readResult = await Promise.race([
-          bossa.reader.read(),
-          timeoutPromise,
-        ]);
-
-        if (readResult.timeout) {
+        if (readResult.timedOut) {
           // Check if we have enough data to decide
           if (collected.length >= 3) {
             const isAscii = this.isValidAsciiResponse(
@@ -511,9 +504,8 @@ export class BOSSAStrategy {
    */
   async completeHandshake(bossa, baudRate) {
     try {
-      // Reconnect reader
-      bossa.reader.releaseLock();
-      bossa.reader = bossa.port.readable.getReader();
+      // Reconnect reader (drops any in-flight read safely)
+      bossa.reattachReader();
 
       // Send V# to get version
       this.log.command("V#", "Request bootloader version string");
@@ -523,15 +515,9 @@ export class BOSSAStrategy {
       const startTime = Date.now();
 
       while (Date.now() - startTime < 1000) {
-        const timeoutPromise = new Promise((resolve) =>
-          setTimeout(() => resolve({ timeout: true }), 50),
-        );
-        const result = await Promise.race([
-          bossa.reader.read(),
-          timeoutPromise,
-        ]);
+        const result = await bossa.readChunk(50);
 
-        if (result.timeout) {
+        if (result.timedOut) {
           if (collected.length > 0) break;
           continue;
         }
@@ -641,10 +627,10 @@ export class BOSSAStrategy {
   }
 
   /**
-   * Wait for any data from the reader
+   * Wait for any data from the protocol's serial stream
    * Returns { gotData, bytes, hex, ascii }
    */
-  async waitForAnyData(reader, timeoutMs) {
+  async waitForAnyData(bossa, timeoutMs) {
     const collected = [];
     const startTime = Date.now();
     this.log.info(`Waiting for data (${timeoutMs}ms timeout)...`);
@@ -654,13 +640,9 @@ export class BOSSAStrategy {
         const remaining = timeoutMs - (Date.now() - startTime);
         const waitTime = Math.min(remaining, 50);
 
-        const timeoutPromise = new Promise((resolve) =>
-          setTimeout(() => resolve({ timeout: true }), waitTime),
-        );
+        const result = await bossa.readChunk(waitTime);
 
-        const result = await Promise.race([reader.read(), timeoutPromise]);
-
-        if (result.timeout) {
+        if (result.timedOut) {
           // If we already have some data, return it
           if (collected.length > 0) {
             break;
@@ -702,8 +684,8 @@ export class BOSSAStrategy {
   /**
    * Alias for waitForAnyData
    */
-  async waitForResponse(reader, timeoutMs) {
-    return this.waitForAnyData(reader, timeoutMs);
+  async waitForResponse(bossa, timeoutMs) {
+    return this.waitForAnyData(bossa, timeoutMs);
   }
 
   async prepare(port, fqbn) {
@@ -849,7 +831,7 @@ export class BOSSAStrategy {
       await bossa.writeCommand("N#");
 
       // Wait for response
-      const response = await this.waitForResponse(bossa.reader, 2000);
+      const response = await this.waitForResponse(bossa, 2000);
 
       if (response.gotData && this.isValidAsciiResponse(response.bytes)) {
         workingBaud = this.PRIMARY_BAUD;
@@ -888,7 +870,7 @@ export class BOSSAStrategy {
 
           this.log.command("N#", "Query bootloader at this baud rate");
           await bossa.writeCommand("N#");
-          const response = await this.waitForResponse(bossa.reader, 1000);
+          const response = await this.waitForResponse(bossa, 1000);
 
           if (response.gotData && this.isValidAsciiResponse(response.bytes)) {
             workingBaud = baudRate;
@@ -941,7 +923,7 @@ export class BOSSAStrategy {
 
         this.log.command("N#", "Retry bootloader query after manual reset");
         await bossa.writeCommand("N#");
-        const response = await this.waitForResponse(bossa.reader, 2000);
+        const response = await this.waitForResponse(bossa, 2000);
 
         if (response.gotData && this.isValidAsciiResponse(response.bytes)) {
           workingBaud = this.PRIMARY_BAUD;
@@ -970,13 +952,9 @@ export class BOSSAStrategy {
     try {
       if (progressCallback) progressCallback(10, `Connected at ${workingBaud}`);
 
-      // Reconnect reader since we consumed it during probe
-      try {
-        bossa.reader.releaseLock();
-      } catch (e) {
-        /* ignore */
-      }
-      bossa.reader = port.readable.getReader();
+      // Reconnect reader since we consumed it during probe (drops any
+      // in-flight read safely)
+      bossa.reattachReader();
 
       // Variant-driven flash memory layout (from the board protocol config):
       //
@@ -1236,12 +1214,6 @@ export class BOSSAStrategy {
         totalBytes,
         `Erase ${pagesToErase} pages (${erasePageSize} bytes per page)`,
       );
-      this.log.command(
-        `X${eraseAddr.toString(16).padStart(8, "0")}#`,
-        isSamdVariant
-          ? "Chip erase command - erases flash from offset to END OF FLASH (blocking, can take several seconds)"
-          : "Chip erase command - erases flash from offset to end of firmware",
-      );
 
       if (isSamdVariant && samdCaps !== null && !samdCaps.includes("X")) {
         // Bootloader explicitly reports no X support - skip the wait; the
@@ -1250,18 +1222,20 @@ export class BOSSAStrategy {
           "Bootloader does not advertise X (chip erase) - skipping; bootloader erases on first write",
         );
       } else if (isSamdVariant) {
-        // SAMD X# erases 0x2000..end-of-flash row-by-row in a blocking loop
-        // (sam_ba_monitor.c eraseFlash) - ~1000 rows on a 256KB SAMD21 can
-        // exceed 5s, so allow 10s. On timeout, CONTINUE like published 1.1.1:
-        // the bootloader is blocked mid-erase (commands are buffered by USB
-        // CDC) or is an old one that ignored X# - secure bootloaders
-        // auto-erase on the first Y#/S# write anyway.
-        const eraseAcknowledged = await bossa.chipErase(eraseAddr, 10000);
+        // SAMD X# erases 0x2000..end-of-flash row-by-row (992 rows on a
+        // 256KB SAMD21) in a blocking busy-loop with USB completely
+        // unserviced (sam_ba_monitor.c). At worst-case row-erase times this
+        // exceeds 10s, and the board is DEAF until it finishes - commands
+        // sent early just stall. Wait up to 30s for the X\n\r ACK.
+        this.log.info(
+          "Waiting for chip erase - the bootloader is blocked and cannot respond until the full flash is erased (typically 3-15s)",
+        );
+        const eraseAcknowledged = await bossa.chipErase(eraseAddr, 30000);
         if (eraseAcknowledged) {
           this.log.success("Flash erased successfully");
         } else {
           this.log.warn(
-            "No X# ACK - continuing anyway (matches bossac/1.1.1 behavior; erase may still be running or bootloader auto-erases on write)",
+            "No X# ACK after 30s - continuing anyway (matches bossac/1.1.1 behavior; bootloader may auto-erase on write)",
           );
           // Discard a late X\n\r ACK so it can't corrupt later ACK reads
           await bossa.flush(300);
@@ -1396,7 +1370,18 @@ export class BOSSAStrategy {
           }
         }
       } else {
-        // Standard BOSSA / SAMD: direct S# writes straight to flash
+        // SAMD21 / standard BOSSA: bossac-faithful buffered writes.
+        // The bootloader's S handler is a raw memcpy intended for RAM
+        // addresses (sam_ba_monitor.c) - direct S# writes to a flash address
+        // bypass the NVM controller sequencing. bossac (D2xNvmFlash) instead
+        // writes each chunk to an SRAM buffer (0x20004000), then issues
+        // Y<sram>,0# + Y<flash>,<size># - the Y handler performs the proper
+        // PBC -> fill page buffer -> WP -> wait-READY sequence per 64-byte
+        // page and only ACKs after the data is committed.
+        const SRAM_BUFFER = 0x20004000;
+        this.log.info(
+          `Buffered write via SRAM @ 0x${SRAM_BUFFER.toString(16)} (bossac D2xNvmFlash flow)`,
+        );
         let flashAddr = flashWriteOffset;
         for (let i = 0; i < totalBytes; i += chunkSize) {
           const chunkNum = Math.floor(i / chunkSize) + 1;
@@ -1406,6 +1391,7 @@ export class BOSSAStrategy {
           );
           const isLastChunk = i + chunkSize >= totalBytes;
 
+          const sramHex = SRAM_BUFFER.toString(16).padStart(8, "0");
           const flashHex = flashAddr.toString(16).padStart(8, "0");
           const chunkHex = chunk.length.toString(16).padStart(8, "0");
 
@@ -1416,11 +1402,12 @@ export class BOSSAStrategy {
             chunk.length,
             isLastChunk,
           );
+          await bossa.writeBinary(SRAM_BUFFER, chunk);
           this.log.command(
-            `S${flashHex},${chunkHex}#`,
-            `Write ${chunk.length} bytes directly to flash @ 0x${flashHex}`,
+            `Y${sramHex},0# / Y${flashHex},${chunkHex}#`,
+            `Commit ${chunk.length} bytes from SRAM to flash @ 0x${flashHex}`,
           );
-          await bossa.writeBinary(flashAddr, chunk);
+          await bossa.writeBuffer(SRAM_BUFFER, flashAddr, chunk.length);
           flashAddr += chunk.length;
 
           const percent = 15 + Math.round((i / totalBytes) * 80);
@@ -1475,17 +1462,30 @@ export class BOSSAStrategy {
       if (progressCallback) progressCallback(96, "Finalizing...");
 
       this.log.section("RESET DEVICE");
-      this.log.info("Sending K# reset command to boot new firmware");
-      this.log.command(
-        "K#",
-        `System reset via NVIC_SystemReset() - boots into user code at 0x${goOffset.toString(16)}`,
-      );
       if (progressCallback) progressCallback(98, "Resetting...");
 
-      // Use K# command (system reset) instead of G# (jump)
-      // This is what Arduino IDE uses - triggers NVIC_SystemReset()
-      // After reset, bootloader validates and boots user code properly
-      await bossa.reset();
+      if (isSamdVariant) {
+        // Old SAMD bootloaders (e.g. v2.0 2018, ArduinoCore-samd 1.6.18)
+        // have NO K# command at all - it is silently ignored and the board
+        // stays in the bootloader forever. bossac resets these boards with a
+        // W# word write of SYSRESETREQ to the Cortex-M AIRCR register.
+        this.log.command(
+          "WE000ED0C,05FA0004#",
+          "Write SCB->AIRCR = VECTKEY|SYSRESETREQ - immediate system reset (bossac-style, works on all SAMD bootloaders)",
+        );
+        try {
+          await bossa.writeWord(0xe000ed0c, 0x05fa0004);
+        } catch (e) {
+          this.log.info("Port dropped during reset write (board resetting)");
+        }
+      } else {
+        // Use K# command (system reset) instead of G# (jump) - this is what
+        // Arduino IDE uses; the bootloader validates and boots user code.
+        // nRF52 boards drop off USB immediately without ACKing - reset()
+        // treats that as the expected success outcome.
+        this.log.info("Sending K# reset command to boot new firmware");
+        await bossa.reset();
+      }
 
       if (progressCallback) progressCallback(100, "Complete!");
       this.log.success("Firmware upload complete!");

@@ -13,23 +13,88 @@ export class BossaProtocol {
     this.log = logger || new UploadLogger("BOSSA");
     this.commandWriteTimeoutMs = 5000;
     this.chunkWriteTimeoutMs = 15000;
+    // Single in-flight reader.read() shared by all read helpers. A read
+    // that loses a Promise.race against a poll timeout stays pending here
+    // and is re-raced on the next call - calling reader.read() again while
+    // one is pending queues a SECOND read, and whichever read the incoming
+    // data resolves is DISCARDED if its race already timed out (this
+    // silently ate every late bootloader ACK).
+    this._pendingRead = null;
   }
 
   async connect() {
     this.reader = this.port.readable.getReader();
     this.writer = this.port.writable.getWriter();
+    this._pendingRead = null;
   }
 
   async disconnect() {
     if (this.reader) {
-      await this.reader.cancel();
-      this.reader.releaseLock();
+      try {
+        await this.reader.cancel();
+      } catch (e) {
+        // Port may already be gone (board reset) - still release the lock
+      }
+      try {
+        this.reader.releaseLock();
+      } catch (e) {
+        /* ignore */
+      }
       this.reader = null;
+      this._pendingRead = null;
     }
     if (this.writer) {
-      this.writer.releaseLock();
+      try {
+        this.writer.releaseLock();
+      } catch (e) {
+        /* ignore */
+      }
       this.writer = null;
     }
+  }
+
+  /**
+   * Release the current reader and acquire a fresh one, dropping any
+   * in-flight read. Use this instead of touching .reader directly.
+   */
+  reattachReader() {
+    try {
+      this.reader.releaseLock();
+    } catch (e) {
+      /* ignore */
+    }
+    this._pendingRead = null;
+    this.reader = this.port.readable.getReader();
+  }
+
+  /**
+   * Read one chunk from the serial stream, waiting at most timeoutMs.
+   * Keeps a single pending reader.read() across calls so data can never be
+   * lost to an orphaned read.
+   * @param {number} timeoutMs - Maximum time to wait for a chunk
+   * @returns {Promise<{timedOut: boolean, value: Uint8Array|null, done: boolean}>}
+   */
+  async readChunk(timeoutMs) {
+    if (!this._pendingRead) {
+      this._pendingRead = this.reader.read();
+    }
+    const timeoutPromise = new Promise((resolve) =>
+      setTimeout(() => resolve("timeout"), timeoutMs),
+    );
+    let result;
+    try {
+      result = await Promise.race([this._pendingRead, timeoutPromise]);
+    } catch (e) {
+      // Read rejected (e.g. device lost after reset) - drop the dead
+      // promise so a later call doesn't re-throw a stale error
+      this._pendingRead = null;
+      throw e;
+    }
+    if (result === "timeout") {
+      return { timedOut: true, value: null, done: false };
+    }
+    this._pendingRead = null;
+    return { timedOut: false, value: result.value, done: result.done };
   }
 
   async delay(ms) {
@@ -42,15 +107,11 @@ export class BossaProtocol {
     try {
       while (Date.now() < deadline) {
         const remaining = Math.max(0, deadline - Date.now());
-        const waitSlice = Math.min(remaining, 20);
-        const timeoutPromise = new Promise((resolve) =>
-          setTimeout(() => resolve("timeout"), waitSlice),
-        );
-        const result = await Promise.race([this.reader.read(), timeoutPromise]);
-        if (result === "timeout") continue;
-        const { value, done } = result;
-        if (done) break;
-        if (value && value.length) totalFlushed += value.length;
+        const chunk = await this.readChunk(Math.min(remaining, 20));
+        if (chunk.timedOut) continue;
+        if (chunk.done) break;
+        if (chunk.value && chunk.value.length)
+          totalFlushed += chunk.value.length;
         else break;
       }
     } catch (e) {}
@@ -83,17 +144,12 @@ export class BossaProtocol {
         return false;
       }
       const remaining = Math.max(0, timeout - (Date.now() - start));
-      const waitSlice = Math.min(remaining, 50);
-      const timeoutPromise = new Promise((resolve) =>
-        setTimeout(() => resolve("timeout"), waitSlice),
-      );
-      const result = await Promise.race([this.reader.read(), timeoutPromise]);
-      if (result === "timeout") continue;
-      const { value, done } = result;
-      if (done) break;
-      if (value && value.length) {
-        collected.push(...value);
-        if (value.includes(0x0d)) break;
+      const chunk = await this.readChunk(Math.min(remaining, 50));
+      if (chunk.timedOut) continue;
+      if (chunk.done) break;
+      if (chunk.value && chunk.value.length) {
+        collected.push(...chunk.value);
+        if (chunk.value.includes(0x0d)) break;
       }
     }
 
@@ -114,17 +170,12 @@ export class BossaProtocol {
     while (true) {
       if (Date.now() - start > timeout) throw new Error("Timeout");
       const remaining = Math.max(0, timeout - (Date.now() - start));
-      const waitSlice = Math.min(remaining, 50);
-      const timeoutPromise = new Promise((resolve) =>
-        setTimeout(() => resolve("timeout"), waitSlice),
-      );
-      const result = await Promise.race([this.reader.read(), timeoutPromise]);
-      if (result === "timeout") continue;
-      const { value, done } = result;
-      if (done) break;
-      if (value && value.length) {
-        collected.push(...value);
-        if (collected.length >= maxBytes || value.includes(0x0d)) break;
+      const chunk = await this.readChunk(Math.min(remaining, 50));
+      if (chunk.timedOut) continue;
+      if (chunk.done) break;
+      if (chunk.value && chunk.value.length) {
+        collected.push(...chunk.value);
+        if (collected.length >= maxBytes || chunk.value.includes(0x0d)) break;
       }
     }
     if (!collected.length) throw new Error("Timeout");
@@ -238,16 +289,10 @@ export class BossaProtocol {
     const addrHex = address.toString(16).padStart(8, "0");
     const sizeHex = data.length.toString(16).padStart(8, "0");
 
-    // Log the S# command with first 8 bytes of data for debugging
-    const firstBytes = Array.from(data.slice(0, Math.min(8, data.length)))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join(" ");
     this.log.command(
       `S${addrHex},${sizeHex}#`,
-      `Write ${data.length} bytes to data_buffer[0x${addrHex}]`,
+      `Write ${data.length} bytes to 0x${addrHex}`,
     );
-    if (data.length)
-      this.log.info(`Payload preview: ${firstBytes}... (first bytes)`);
 
     await this.writeCommand(`S${addrHex},${sizeHex}#`);
     await this.delay(5);
@@ -305,16 +350,26 @@ export class BossaProtocol {
 
   async reset() {
     this.log.section("RESET");
-    // Flush any pending data in serial buffer before sending reset
-    await this.flush(100);
-    this.log.command("K#", "System reset via NVIC_SystemReset() call");
-    await this.writeCommand("K#");
-    // Board resets almost immediately, so we may not get ACK
-    const ok = await this.readAck("K", 1000);
-    if (ok) {
-      this.log.response("K# ACK", "Board acknowledged reset command");
-    } else {
-      this.log.warn("No ACK to K# (board likely reset immediately)");
+    // The board resets and drops off USB almost immediately after K# -
+    // nRF52 bootloaders reset without ACKing at all, so a NetworkError
+    // ("device has been lost") during the flush/write/ACK-read here is the
+    // EXPECTED success outcome, not a failure.
+    try {
+      // Flush any pending data in serial buffer before sending reset
+      await this.flush(100);
+      this.log.command("K#", "System reset via NVIC_SystemReset() call");
+      await this.writeCommand("K#");
+      // Board resets almost immediately, so we may not get ACK
+      const ok = await this.readAck("K", 1000);
+      if (ok) {
+        this.log.response("K# ACK", "Board acknowledged reset command");
+      } else {
+        this.log.warn("No ACK to K# (board likely reset immediately)");
+      }
+    } catch (e) {
+      this.log.info(
+        `Board dropped off USB during reset (expected): ${e.message || e}`,
+      );
     }
   }
 
@@ -358,17 +413,12 @@ export class BossaProtocol {
       if (Date.now() - startTime > timeout)
         throw new Error(`Timeout (got ${offset}/${count})`);
       const remainingTime = timeout - (Date.now() - startTime);
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout")), remainingTime),
-      );
-      const { value, done } = await Promise.race([
-        this.reader.read(),
-        timeoutPromise,
-      ]);
-      if (done) throw new Error("Stream closed");
-      if (value) {
-        const toCopy = Math.min(value.length, count - offset);
-        result.set(value.subarray(0, toCopy), offset);
+      const chunk = await this.readChunk(Math.min(remainingTime, 50));
+      if (chunk.timedOut) continue;
+      if (chunk.done) throw new Error("Stream closed");
+      if (chunk.value) {
+        const toCopy = Math.min(chunk.value.length, count - offset);
+        result.set(chunk.value.subarray(0, toCopy), offset);
         offset += toCopy;
       }
     }

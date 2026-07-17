@@ -5,6 +5,142 @@ All notable changes to the "Arduino to Codespaces Bridge" extension will be docu
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.42] - 2026-07-17
+
+### Changed
+
+- Drivers tab Teensy entry now leads with the "no serial port at all"
+  explanation: the USB type is compiled into the sketch, and a factory-fresh
+  Teensy runs the blink demo without USB Serial, so it does not appear in
+  any port list - not a driver problem; the first Serial-type sketch must be
+  flashed from a host PC with Teensy Loader / Teensyduino.
+
+## [1.2.41] - 2026-07-17
+
+### Added
+
+- Board Manager URL modal: one-click presets for common third-party board
+  packages - Teensy (PJRC), ESP32, ESP8266, Raspberry Pi Pico/RP2040
+  (earlephilhower), Adafruit, SparkFun, Seeed Studio and STM32 (STM32duino).
+  Already-configured URLs show a "✓ Added" badge; adding one prompts the
+  usual "Update Index" step, after which the boards appear in search and
+  install normally. Replaces the old copy-paste-only text list.
+
+## [1.2.40] - 2026-07-17
+
+### Added
+
+- Drivers tab: PJRC Teensy entry - no driver needed for the serial monitor
+  on Windows 10+/macOS, Linux needs PJRC's 00-teensy.rules udev rules for
+  uploads, and a note that the HalfKay bootloader is USB HID (not reachable
+  from Web Serial - use Teensy Loader on the host if browser upload fails).
+
+## [1.2.39] - 2026-07-17
+
+### Fixed
+
+- Nano 33 BLE (nRF52) upload no longer reports "Upload failed: The device
+  has been lost" after a fully successful flash. The nRF52 bootloader
+  resets and drops off USB within ~30ms of the K# reset command (without
+  ACKing), which rejected our pending ACK read with a NetworkError that
+  propagated up as an upload failure and triggered a redundant
+  error-recovery reconnect racing the normal restart reconnect.
+  - BossaProtocol.reset() now treats device-loss during the K# sequence as
+    the expected success outcome.
+  - readChunk() clears its shared in-flight read when it rejects, so a
+    stale error can't re-throw on a later call.
+  - disconnect() releases reader/writer locks even when cancel() throws on
+    a vanished port (previously left the stream locked, causing the
+    "Cannot abort a locked stream" close warning).
+  - Duplicate K# command logging removed (protocol layer logs it once).
+  - SAMD flow untouched: its reset uses the W# AIRCR write with its own
+    error handling and never calls reset().
+
+## [1.2.38] - 2026-07-17
+
+### Added
+
+- Startup gate: the Bridge UI is now held behind a loading overlay until the
+  bridge server responds and the boards + sketches lists have loaded, so
+  users never interact with empty dropdowns while the server is still
+  starting. The overlay polls the server (up to 60s with live status), then
+  loads both lists; if either fails a Retry button re-runs startup.
+
+## [1.2.37] - 2026-07-17
+
+### Added
+
+- The validated SAMD21 upload flow (SAM-BA via SRAM buffer + Y# commits,
+  30s chip erase, AIRCR reset) now covers the full official SAMD family.
+  Added protocol configs with bootloader PIDs from ArduinoCore-samd
+  boards.txt and boards.json auto-detect entries for: MKR Zero, MKR FOX
+  1200, MKR WAN 1300/1310, MKR GSM 1400, MKR NB 1500, MKR Vidor 4000
+  (joining MKR1000, MKR WiFi 1010, Nano 33 IoT and Zero). MKR1000 and Zero
+  PID lists extended with their 0x82xx/0x02xx variants.
+
+### Changed
+
+- Removed debug output from upload logs: [Debug] sketch/board/artifact
+  lines, duplicated SAM-BA command logging between strategy and protocol
+  layers, and firmware payload-preview bytes.
+
+## [1.2.36] - 2026-07-17
+
+### Fixed
+
+- SAM-BA responses were silently discarded by orphaned serial reads,
+  producing X#/Y#/N#/V# "ACK timeout" errors on every step even though the
+  bootloader received and executed every command (1.2.35 uploads succeeded
+  while logging a wall of errors). All polling read loops raced a fresh
+  reader.read() against a 20-50ms timer each iteration; the losing read
+  stayed queued on the stream, and when the bootloader's reply arrived it
+  resolved the OLDEST orphaned read - whose race had already timed out - so
+  the bytes were dropped. A 30s erase wait accumulated ~600 orphaned reads
+  that then swallowed every subsequent ACK. BossaProtocol now keeps a single
+  shared in-flight read (readChunk) reused across poll slices, and all read
+  helpers (readAck, readUntilTerminator, readBytes, flush) plus the
+  strategy's probe/handshake/waitForResponse loops consume it. Reader
+  swaps go through the new reattachReader() so a stale in-flight read can
+  never linger.
+
+## [1.2.35] - 2026-07-17
+
+### Fixed
+
+- SAMD21 upload flow rewritten to match the official bootloader source
+  (ArduinoCore-samd 1.6.18 bootloaders/zero/sam_ba_monitor.c, the code
+  running on boards with the "v2.0 [Arduino:XYZ] Mar 2018" bootloader) and
+  bossac's D2xNvmFlash driver:
+  - Chip erase (X#) timeout raised to 30s. The bootloader erases 0x2000 to
+    end-of-flash (992 rows) in a blocking busy-loop with USB unserviced -
+    the board is deaf until it finishes, and worn flash can exceed 10s.
+    Sending flash writes to the still-erasing board is what froze uploads.
+  - Flash writes no longer use direct-to-flash S# commands. The bootloader's
+    S handler is a raw memcpy meant for RAM; bossac never writes flash that
+    way. Each 4KB chunk is now written to the SRAM buffer at 0x20004000 and
+    committed with Y<sram>,0# + Y<flash>,<size># - the Y handler performs
+    the proper NVM sequence (PBC, fill page buffer, WP, wait READY) and only
+    ACKs after commit.
+  - Reset: 2018-era SAMD bootloaders have NO K# command (it was silently
+    ignored, leaving the board stuck in bootloader mode - the reason boards
+    kept enumerating with the bootloader PID). SAMD now resets bossac-style
+    with W# writing SYSRESETREQ (0x05FA0004) to the Cortex-M AIRCR register
+    at 0xE000ED0C, which works on every SAMD bootloader generation.
+
+## [1.2.34] - 2026-07-17
+
+### Fixed
+
+- Board auto-detect now recognises Arduino boards that enumerate in
+  BOOTLOADER mode. Native-USB boards (SAMD/32U4) present a different USB PID
+  in bootloader mode (app PID - 0x8000, per ArduinoCore boards.txt), and a
+  board with no valid sketch stays in the bootloader permanently - so a MKR
+  WiFi 1010 showing PID 0x0054 was never matched against the app-mode-only
+  0x8054 entry. Added bootloader PIDs for: Leonardo (0x0036), Micro
+  (0x0037), MKR1000 (0x004e), MKR WiFi 1010 (0x0054), Nano 33 IoT (0x0057),
+  Zero native (0x004d). Both boards.json copies (resources/ and
+  web-client/public/) updated.
+
 ## [1.2.33] - 2026-07-17
 
 ### Fixed
