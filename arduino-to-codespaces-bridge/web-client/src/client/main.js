@@ -125,6 +125,108 @@ function updateConnectionUIState(connected) {
 // Server Health Monitoring
 // =============================================================================
 
+/** @type {boolean} A Codespaces port-auth-expired notice has been shown */
+let portAuthNoticeShown = false;
+
+/**
+ * Detect the GitHub Codespaces port-forward sign-in page: when the
+ * forwarded-port auth cookie expires, the proxy answers API requests with
+ * an HTML login page and HTTP 200 - a silent failure mode unless the
+ * content type is checked.
+ * @param {Response} response - Fetch response to inspect
+ * @returns {boolean} True when the response is HTML instead of JSON
+ */
+function isHtmlResponse(response) {
+  const contentType = response.headers.get("content-type") || "";
+  return contentType.includes("text/html");
+}
+
+/**
+ * Show a one-time notice that the Codespaces forwarded-port session
+ * expired and the page must be reloaded to re-authenticate.
+ */
+function showPortAuthExpiredNotice() {
+  if (portAuthNoticeShown) return;
+  portAuthNoticeShown = true;
+  setBridgeStatus({
+    online: false,
+    message: "Codespaces port session expired",
+    detail: "Reload the page to sign in to the forwarded port again",
+  });
+  showGuidance({
+    title: "\ud83d\udd10 Codespaces session expired",
+    lines: [
+      "GitHub's forwarded-port sign-in for this page has expired, so requests to the bridge are being redirected to a login page.",
+      "Reload the page to re-authenticate - your Codespace and sketches are unaffected.",
+    ],
+    actionLabel: "Reload page",
+    onAction: () => window.location.reload(),
+  });
+}
+
+/**
+ * Fetch wrapper hardened for the Codespaces forwarded-port proxy:
+ * - request timeout via AbortController
+ * - automatic retry with backoff on transient failures (network errors and
+ *   502/503/504 proxy responses while the Codespace wakes up)
+ * - detection of the Codespaces sign-in HTML page served with HTTP 200
+ *   when the port-forwarding auth cookie has expired
+ * @param {string} url - Request URL
+ * @param {object} [options] - fetch options plus {timeoutMs, retries, retryDelayMs}
+ * @returns {Promise<Response>} The successful response
+ */
+async function bridgeFetch(url, options = {}) {
+  const {
+    timeoutMs = 20000,
+    retries = 2,
+    retryDelayMs = 1000,
+    ...fetchOptions
+  } = options;
+
+  let lastError = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, {
+        ...fetchOptions,
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+
+      if (response.ok && isHtmlResponse(response)) {
+        showPortAuthExpiredNotice();
+        throw new Error(
+          "Codespaces port session expired - reload the page to sign in again",
+        );
+      }
+
+      if ([502, 503, 504].includes(response.status) && attempt < retries) {
+        lastError = new Error(`HTTP ${response.status} from port proxy`);
+        await new Promise((r) => setTimeout(r, retryDelayMs * (attempt + 1)));
+        continue;
+      }
+
+      return response;
+    } catch (error) {
+      clearTimeout(timer);
+      if (
+        error &&
+        typeof error.message === "string" &&
+        error.message.includes("port session expired")
+      ) {
+        throw error;
+      }
+      lastError = error;
+      if (attempt < retries) {
+        await new Promise((r) => setTimeout(r, retryDelayMs * (attempt + 1)));
+        continue;
+      }
+    }
+  }
+  throw lastError || new Error("Request failed");
+}
+
 /**
  * Start periodic server health monitoring
  */
@@ -154,6 +256,13 @@ async function checkServerHealth() {
 
     clearTimeout(timeoutId);
 
+    if (response.ok && isHtmlResponse(response)) {
+      // The Codespaces port-forward cookie expired - the proxy is serving
+      // its sign-in page with HTTP 200 to every request
+      showPortAuthExpiredNotice();
+      throw new Error("Codespaces port session expired");
+    }
+
     if (response.ok) {
       const data = await response.json();
 
@@ -161,6 +270,11 @@ async function checkServerHealth() {
         logger.info("Server back online", data.data);
         serverOnline = true;
         hideBridgeOfflineBanner();
+        setBridgeStatus({ online: true });
+        // The Codespace may have just woken up - reload the boards and
+        // sketches lists so the dropdowns aren't left empty or stale
+        logger.info("Reloading boards and sketches after reconnection");
+        void initialize();
       }
     } else {
       throw new Error(`Health check failed: HTTP ${response.status}`);
@@ -277,7 +391,7 @@ verifyServerVersion();
  */
 async function verifyServerVersion() {
   try {
-    const response = await fetch("/api/version");
+    const response = await bridgeFetch("/api/version");
     const data = await response.json();
 
     logger.info(`Server Version: ${data.version}`);
@@ -650,6 +764,9 @@ function handleBridgeError(context, error) {
     message: "Bridge server unreachable",
     detail: `${context}: ${message}`,
   });
+  // Don't wait up to 30s for the next scheduled poll - confirm the outage
+  // (and start recovery detection) right away
+  setTimeout(() => void checkServerHealth(), 500);
 }
 
 async function requestBridgeRestart() {
@@ -759,8 +876,8 @@ async function loadBoards() {
   try {
     // Fetch both installed boards (API) and VID/PID metadata (JSON)
     const [apiRes, jsonRes] = await Promise.all([
-      fetch("/api/boards"),
-      fetch("/boards.json"),
+      bridgeFetch("/api/boards", { timeoutMs: 30000 }),
+      bridgeFetch("/boards.json"),
     ]);
 
     if (!apiRes.ok) throw new Error("Failed to load boards from API");
@@ -811,7 +928,7 @@ async function loadBoards() {
 // Load Sketches (and optionally library examples)
 async function loadSketches() {
   try {
-    const response = await fetch("/api/sketches");
+    const response = await bridgeFetch("/api/sketches");
     if (!response.ok) throw new Error("Failed to load sketches");
     const data = await response.json();
 
@@ -993,6 +1110,14 @@ async function waitForBridgeServer(maxWaitMs = 60000) {
     attempt++;
     try {
       const res = await fetch("/api/version");
+      if (res.ok && isHtmlResponse(res)) {
+        // Codespaces port sign-in page served with HTTP 200
+        showPortAuthExpiredNotice();
+        setStartupStatus(
+          "Codespaces port session expired - reload the page to sign in again.",
+        );
+        return false;
+      }
       if (res.ok) return true;
     } catch (e) {
       // Server not accepting connections yet - keep waiting
@@ -1105,10 +1230,11 @@ boardSelect.addEventListener("change", async () => {
   const fqbn = boardSelect.value;
   if (fqbn) {
     try {
-      const response = await fetch("/api/intellisense", {
+      const response = await bridgeFetch("/api/intellisense", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fqbn }),
+        timeoutMs: 60000,
       });
       if (response.ok) {
         logger.info(`IntelliSense updated for: ${fqbn}`);
@@ -1175,10 +1301,13 @@ async function compileSketch(sketchPathOverride = null) {
   serialManager.pause();
 
   try {
-    const response = await fetch("/api/compile", {
+    const response = await bridgeFetch("/api/compile", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ path: sketchPath, fqbn: fqbn }),
+      // First compile for a platform can download toolchains - allow long
+      timeoutMs: 300000,
+      retries: 1,
     });
 
     const data = await response.json();
@@ -1662,7 +1791,7 @@ compileUploadBtn.addEventListener("click", async () => {
     // 2. Download the firmware file
     try {
       terminal.write("Preparing firmware for download...\r\n");
-      const response = await fetch(artifactUrl);
+      const response = await bridgeFetch(artifactUrl, { timeoutMs: 60000 });
       if (!response.ok)
         throw new Error("Failed to download firmware from server");
 
@@ -1742,7 +1871,7 @@ compileUploadBtn.addEventListener("click", async () => {
   let firmwareData;
   try {
     terminal.write("Downloading firmware...\r\n");
-    const response = await fetch(artifactUrl);
+    const response = await bridgeFetch(artifactUrl, { timeoutMs: 60000 });
     if (!response.ok) throw new Error("Failed to download firmware");
     firmwareData = await response.arrayBuffer();
 
@@ -1838,7 +1967,7 @@ async function runI2cScan() {
 
   try {
     terminal.write("Downloading firmware...\r\n");
-    const response = await fetch(artifactUrl);
+    const response = await bridgeFetch(artifactUrl, { timeoutMs: 60000 });
     if (!response.ok) throw new Error("Failed to download firmware");
     const firmwareData = await response.arrayBuffer();
 

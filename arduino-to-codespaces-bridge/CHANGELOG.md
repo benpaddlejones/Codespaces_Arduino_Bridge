@@ -5,6 +5,28 @@ All notable changes to the "Arduino to Codespaces Bridge" extension will be docu
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.43] - 2026-07-17
+
+### Fixed
+
+- Hardened the browser ↔ Codespaces forwarded-port connection against the
+  proxy's common failure modes:
+  - New bridgeFetch wrapper (timeout via AbortController, automatic retry
+    with backoff on network errors and transient 502/503/504 proxy
+    responses while the Codespace wakes) used by the boards/sketches
+    loaders, version check, compile, IntelliSense and firmware downloads.
+  - Detects GitHub's port-forward sign-in page: when the auth cookie
+    expires the proxy answers API calls with an HTML login page and
+    HTTP 200, which previously caused silent JSON-parse failures. Now shows
+    a clear "Codespaces session expired - reload the page" notice (startup
+    gate, health check and all bridgeFetch calls).
+  - When the health check sees the server come back online it reloads the
+    boards and sketches lists, so dropdowns recover automatically after a
+    Codespace sleep/wake instead of staying empty.
+  - Bridge errors trigger an immediate health check instead of waiting up
+    to 30s for the next poll, so the offline banner and recovery detection
+    start right away.
+
 ## [1.2.42] - 2026-07-17
 
 ### Changed
