@@ -155,14 +155,52 @@ export class WebSerialProvider {
    */
   async connect(baudRate = 9600, port = null) {
     try {
-      this.port = port || (await navigator.serial.requestPort());
+      const requestedPort = port || (await navigator.serial.requestPort());
+
+      // If WE already hold an open session (background auto-reconnect, a
+      // previous connect, or a UI desync), a bare close() fails with
+      // "Cannot cancel a locked stream" because the read loop holds the
+      // reader lock - and the subsequent open() then fails, which used to
+      // be misreported as "another program is using the port".
+      // Tear our own session down properly first.
+      if (this.port && (this.port.readable || this.port.writable)) {
+        serialLogger.warn(
+          "This page already holds an open port - releasing it before reconnect",
+        );
+        this.keepReading = false;
+        if (this.reader) {
+          try {
+            await this.reader.cancel();
+          } catch (e) {
+            serialLogger.warn("Error canceling reader", e);
+          }
+          this.reader = null;
+        }
+        if (this.writer) {
+          try {
+            await this.writer.close();
+          } catch (e) {
+            serialLogger.warn("Error closing writer", e);
+          }
+          this.writer = null;
+        }
+        try {
+          await this.port.close();
+        } catch (e) {
+          serialLogger.warn("Error closing our open port", e);
+        }
+        await new Promise((r) => setTimeout(r, PORT_CLOSE_DELAY_MS));
+      }
+
+      this.port = requestedPort;
       this.lastBaudRate = baudRate;
       this.reconnectAttempts = 0;
       // Re-enable auto-reconnect for the new session (an earlier intentional
       // disconnect turns it off permanently otherwise).
       this.autoReconnect = true;
 
-      // Check if port is already open, close it first
+      // The chosen port may still be open (e.g. granted to this page but
+      // opened by an earlier session object) - close it before reopening
       if (this.port.readable || this.port.writable) {
         serialLogger.warn("Port already open, closing before reconnect");
         try {

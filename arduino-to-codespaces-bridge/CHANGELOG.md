@@ -6,6 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Same-day debugging iterations are grouped into their release milestone.
 
+## [1.2.56] - 2026-07-18
+
+### Fixed
+
+- "Loading boards and sketches…" could hang for minutes at startup: when
+  the environment sync's installed-state query failed transiently, the
+  failure was treated as "nothing installed", so EVERY platform and library
+  from arduino-requirements.txt was reinstalled - blocking arduino-cli (and
+  with it the boards/sketches APIs the startup gate waits on). Installed
+  state is now verified first and a failed check skips the sync (retried on
+  the next trigger) instead of reinstalling.
+- Same root cause could silently WIPE arduino-requirements.txt: writing the
+  config after a failed installed-state query produced empty platform and
+  library lists. The file is now left untouched unless the state was
+  verified.
+
+## [1.2.55] - 2026-07-18
+
+### Fixed
+
+- "Serial port could not be opened" appeared even with NO other programs
+  running: the page itself was the culprit. When this page already held an
+  open session (background auto-reconnect, an earlier connect, or a UI
+  desync), clicking Connect tried a bare close() on the port - which fails
+  with "Cannot cancel a locked stream" while the read loop holds the reader
+  lock - so the reopen failed and the error was misattributed to other
+  software. Connect now fully tears down our own session first (stop read
+  loop, cancel reader, close writer, close port) before reopening.
+
 ## [1.2.54] - 2026-07-18
 
 ### Fixed

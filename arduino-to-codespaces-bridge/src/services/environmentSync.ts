@@ -183,6 +183,18 @@ export class EnvironmentSyncController {
     const installedPlatforms = await this.fetchInstalledPlatforms(port);
     const installedLibraries = await this.fetchInstalledLibraries(port);
 
+    // Check-before-install is only valid when the check SUCCEEDED. A failed
+    // query must never be treated as "nothing installed" - that caused a
+    // full reinstall of every platform/library at startup, blocking the CLI
+    // (and the boards/sketches APIs) for minutes.
+    if (installedPlatforms === null || installedLibraries === null) {
+      this.output.appendLine(
+        "[Env Sync] Could not verify installed state - skipping sync (will retry on next trigger)",
+      );
+      this.needsSyncOnStart = true;
+      return;
+    }
+
     const missingPlatforms = config.platforms.filter(
       (platform) => !this.isPlatformSatisfied(platform, installedPlatforms),
     );
@@ -192,7 +204,9 @@ export class EnvironmentSyncController {
     );
 
     if (missingPlatforms.length === 0 && missingLibraries.length === 0) {
-      this.output.appendLine("[Env Sync] Environment already up to date");
+      this.output.appendLine(
+        `[Env Sync] Environment already up to date (${installedPlatforms.length} platforms, ${installedLibraries.length} libraries installed)`,
+      );
       return;
     }
 
@@ -282,11 +296,12 @@ export class EnvironmentSyncController {
    * Query the running server for the currently installed board platforms.
    *
    * @param port Port the bridge server is listening on.
-   * @returns Installed platforms, or an empty array on failure.
+   * @returns Installed platforms, or NULL when the query failed (callers
+   *   must not confuse failure with an empty environment).
    */
   private async fetchInstalledPlatforms(
     port: number,
-  ): Promise<Array<{ id: string; installedVersion?: string | null }>> {
+  ): Promise<Array<{ id: string; installedVersion?: string | null }> | null> {
     try {
       const response = await fetch(
         `http://127.0.0.1:${port}/api/cli/cores/installed`,
@@ -297,7 +312,7 @@ export class EnvironmentSyncController {
       };
 
       if (!data.success || !Array.isArray(data.platforms)) {
-        return [];
+        return null;
       }
 
       return data.platforms;
@@ -305,7 +320,7 @@ export class EnvironmentSyncController {
       this.output.appendLine(
         `[Env Sync] Failed to query installed platforms: ${error.message}`,
       );
-      return [];
+      return null;
     }
   }
 
@@ -313,11 +328,13 @@ export class EnvironmentSyncController {
    * Query the running server for the currently installed libraries.
    *
    * @param port Port the bridge server is listening on.
-   * @returns Installed libraries, or an empty array on failure.
+   * @returns Installed libraries, or NULL when the query failed (callers
+   *   must not confuse failure with an empty environment).
    */
-  private async fetchInstalledLibraries(
-    port: number,
-  ): Promise<Array<{ name: string; installedVersion?: string | null }>> {
+  private async fetchInstalledLibraries(port: number): Promise<Array<{
+    name: string;
+    installedVersion?: string | null;
+  }> | null> {
     try {
       const response = await fetch(
         `http://127.0.0.1:${port}/api/cli/libraries/installed`,
@@ -328,7 +345,7 @@ export class EnvironmentSyncController {
       };
 
       if (!data.success || !Array.isArray(data.libraries)) {
-        return [];
+        return null;
       }
 
       return data.libraries;
@@ -336,7 +353,7 @@ export class EnvironmentSyncController {
       this.output.appendLine(
         `[Env Sync] Failed to query installed libraries: ${error.message}`,
       );
-      return [];
+      return null;
     }
   }
 
@@ -510,6 +527,15 @@ export class EnvironmentSyncController {
     try {
       const installedPlatforms = await this.fetchInstalledPlatforms(port);
       const installedLibraries = await this.fetchInstalledLibraries(port);
+
+      // NEVER rewrite the config off a failed query - an empty result here
+      // would wipe the committed platform/library lists
+      if (installedPlatforms === null || installedLibraries === null) {
+        this.output.appendLine(
+          "[Env Sync] Could not verify installed state - config file left untouched",
+        );
+        return;
+      }
 
       // Read current config
       let config: EnvironmentConfig;
