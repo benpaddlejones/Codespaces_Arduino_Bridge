@@ -1940,9 +1940,21 @@ export class BridgeServer extends EventEmitter {
     }
 
     if (sketches.length > 0) {
-      return sketches;
+      return this.sortSketches(sketches);
     }
-    return this.scanSketchesOnDisk();
+    return this.sortSketches(this.scanSketchesOnDisk());
+  }
+
+  /**
+   * Sort sketches alphabetically for stable UI ordering.
+   */
+  private sortSketches(sketches: SketchInfo[]): SketchInfo[] {
+    return sketches.sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, {
+        sensitivity: "base",
+        numeric: true,
+      }),
+    );
   }
 
   /**

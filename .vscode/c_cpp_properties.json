@@ -3,28 +3,29 @@
   "configurations": [
     {
       "name": "Arduino",
-      "compilerPath": "/home/node/.arduino15/packages/arduino/tools/arm-none-eabi-gcc/7-2017q4/bin/arm-none-eabi-g++",
+      "compilerPath": "/home/node/.arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/avr-g++",
       "compilerArgs": [
-        "-mcpu=cortex-m4"
+        "-mmcu=atmega328p"
       ],
-      "intelliSenseMode": "gcc-arm",
+      "intelliSenseMode": "gcc-x64",
       "includePath": [
         "${workspaceFolder}/**",
-        "/home/node/.arduino15/packages/arduino/hardware/renesas_uno/1.6.0/cores/arduino",
-        "/home/node/.arduino15/packages/arduino/hardware/renesas_uno/1.6.0/variants/NANOR4",
-        "/home/node/.arduino15/packages/arduino/hardware/renesas_uno/1.6.0/libraries/**",
+        "/home/node/.arduino15/packages/arduino/hardware/avr/1.8.8/cores/arduino",
+        "/home/node/.arduino15/packages/arduino/hardware/avr/1.8.8/variants/standard",
+        "/home/node/.arduino15/packages/arduino/hardware/avr/1.8.8/libraries/**",
         "/home/node/Arduino/libraries/**",
-        "/home/node/.arduino15/packages/arduino/tools/arm-none-eabi-gcc/7-2017q4/arm-none-eabi/include"
+        "/home/node/.arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/avr/include"
       ],
       "forcedInclude": [
-        "/home/node/.arduino15/packages/arduino/hardware/renesas_uno/1.6.0/cores/arduino/Arduino.h"
+        "/home/node/.arduino15/packages/arduino/hardware/avr/1.8.8/cores/arduino/Arduino.h"
       ],
       "cStandard": "c11",
-      "cppStandard": "c++17",
+      "cppStandard": "c++11",
       "defines": [
         "ARDUINO=10607",
-        "ARDUINO_nanor4",
-        "ARDUINO_ARCH_RENESAS_UNO"
+        "F_CPU=16000000L",
+        "ARDUINO_AVR_UNO",
+        "ARDUINO_ARCH_AVR"
       ]
     }
   ]

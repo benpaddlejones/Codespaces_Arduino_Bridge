@@ -436,6 +436,7 @@ const restartBridgeBtn = document.getElementById("restartBridgeBtn");
 const connectBtn = document.getElementById("connectBtn");
 const disconnectBtn = document.getElementById("disconnectBtn");
 const baudSelect = document.getElementById("baudRate");
+const detectBaudBtn = document.getElementById("detectBaudBtn");
 const boardSelect = document.getElementById("boardType");
 const sketchSelect = document.getElementById("sketchSelect");
 const includeExamplesCheck = document.getElementById("includeExamplesCheck");
@@ -2371,6 +2372,73 @@ serialManager.provider.on("reconnect_failed", () => {
   updateConnectionUIState(false);
   updateCompileButtons();
 });
+
+serialManager.on("baudDetected", (baud) => {
+  terminal.write(`\r\n[Bridge] Auto-detected baud: ${baud}\r\n`);
+});
+
+if (detectBaudBtn) {
+  detectBaudBtn.addEventListener("click", async () => {
+    if (!serialManager.provider.port) {
+      terminal.write("\r\n[Bridge] Connect to a serial port first.\r\n");
+      return;
+    }
+
+    if (serialManager.baudDetectionActive) {
+      serialManager.cancelBaudDetection();
+      terminal.write("\r\n[Bridge] Baud detection cancelled.\r\n");
+      return;
+    }
+
+    const currentBaud =
+      parseInt(baudSelect.value, 10) ||
+      lastWorkingBaudRate ||
+      getDefaultBaudRate(boardSelect.value);
+
+    detectBaudBtn.disabled = true;
+    baudSelect.disabled = true;
+
+    terminal.write("\r\n[Bridge] Auto-detecting baud rate...\r\n");
+
+    try {
+      const detectedBaud = await serialManager.startBaudDetection(
+        currentBaud,
+        (status) => terminal.write(`[Bridge] ${status}\r\n`),
+      );
+
+      if (detectedBaud) {
+        lastWorkingBaudRate = detectedBaud;
+        baudSelect.value = detectedBaud.toString();
+        try {
+          await serialManager.write("\r\n");
+        } catch (handshakeError) {
+          logger.warn("Unable to send baud-detect handshake", handshakeError);
+        }
+        terminal.write(
+          `\r\n[Bridge] Baud detection complete: ${detectedBaud}\r\n`,
+        );
+      } else {
+        terminal.write(
+          "\r\n[Bridge] No readable baud found; restoring previous rate.\r\n",
+        );
+        const restored = await serialManager.provider.reopenAtBaud(currentBaud);
+        if (!restored) {
+          terminal.write(
+            "[Bridge] Could not restore previous baud. Please reconnect manually.\r\n",
+          );
+          updateConnectionUIState(false);
+          updateCompileButtons();
+        }
+      }
+    } catch (error) {
+      logger.error("Baud detection failed", error);
+      terminal.write(`\r\nError: ${error.message}\r\n`);
+    } finally {
+      detectBaudBtn.disabled = false;
+      baudSelect.disabled = false;
+    }
+  });
+}
 
 // Handle parsed lines for Plotter
 serialManager.on("line", (line) => {

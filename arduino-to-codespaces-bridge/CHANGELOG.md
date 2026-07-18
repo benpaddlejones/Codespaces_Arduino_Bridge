@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Same-day debugging iterations are grouped into their release milestone.
 
+## [2.0.1] - 2026-07-18
+
+### Fixed
+
+- Sketch dropdown ordering is now stable and alphabetical in the bridge API,
+  so "Select Sketch..." no longer appears in filesystem-discovery order.
+
+### Added
+
+- Serial Monitor now includes an "Auto-Detect Baud" action that scans common
+  baud rates and applies the first rate that yields readable ASCII output.
+
 ## [2.0.0] - 2026-07-18
 
 **Major release** — consolidates the 1.2.x series into the first release

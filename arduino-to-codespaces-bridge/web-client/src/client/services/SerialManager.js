@@ -49,6 +49,8 @@ export class SerialManager {
     this.pauseDepth = 0;
     /** @type {boolean} */
     this.baudDetectionActive = false;
+    /** @type {string} Raw chunk buffer used only during baud detection */
+    this.detectionBuffer = "";
     /** @type {{line: Function[], baudDetected: Function[]}} */
     this.listeners = {
       line: [],
@@ -161,6 +163,7 @@ export class SerialManager {
     }
 
     this.baudDetectionActive = true;
+    this.detectionBuffer = "";
     const startIndex = COMMON_BAUD_RATES.indexOf(currentBaud);
     const baudsToTry =
       startIndex >= 0
@@ -190,20 +193,26 @@ export class SerialManager {
       }
 
       // Wait briefly for data to arrive
-      await new Promise((r) => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, BAUD_DETECT_DELAY_MS));
 
       // Check if we received valid ASCII data
-      if (this.buffer.length > 5 && this.isAsciiData(this.buffer)) {
+      if (
+        this.detectionBuffer.length >= MIN_BYTES_FOR_DETECTION &&
+        this.isAsciiData(this.detectionBuffer)
+      ) {
         this.baudDetectionActive = false;
         this.emit("baudDetected", baud);
+        this.detectionBuffer = "";
         return baud;
       }
 
       // Clear buffer for next attempt
       this.buffer = "";
+      this.detectionBuffer = "";
     }
 
     this.baudDetectionActive = false;
+    this.detectionBuffer = "";
     return null;
   }
 
@@ -218,6 +227,13 @@ export class SerialManager {
     // When paused, discard incoming data
     if (this.paused) {
       return;
+    }
+
+    if (this.baudDetectionActive) {
+      this.detectionBuffer += chunk;
+      if (this.detectionBuffer.length > 4096) {
+        this.detectionBuffer = this.detectionBuffer.slice(-4096);
+      }
     }
 
     this.buffer += chunk;
