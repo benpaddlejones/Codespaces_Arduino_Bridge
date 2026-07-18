@@ -6,6 +6,69 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Same-day debugging iterations are grouped into their release milestone.
 
+## [1.2.49] - 2026-07-18
+
+### Changed
+
+- Marketplace README rewritten for clarity: grouped feature overview
+  (compile & upload protocols, board auto-detection with learned devices,
+  full web-UI tab tour, reliability features), corrected requirements
+  (arduino-cli is BUNDLED - no install needed), refreshed usage flow,
+  supported-boards table including the SAMD/MKR family and Nano 33 BLE,
+  and environment documentation for arduino-requirements.txt including the
+  learned `device` lines. Project root README now documents the overall
+  architecture with a marketplace link.
+
+## [1.2.48] - 2026-07-18
+
+### Changed
+
+- Upload output rewritten around a single UploadReporter module: the
+  terminal now shows only fixed phases (compile -> prepare -> erase ->
+  write -> verify -> reset -> reconnect) with one self-overwriting progress
+  line and a single success/failure summary - identical across
+  BOSSA/DFU/AVR/ESP boards. The full protocol trace (CMD/RSP/timing) now
+  lives in the browser console only: the console-to-terminal mirror that
+  flooded the terminal with every log line is removed, and failure
+  summaries point to the console (F12) for diagnosis. All upload paths
+  (compile & upload, bootloader chooser, I2C scanner) route through the
+  reporter. 9 new test assertions drive the reporter under Node and
+  tripwire the console-only rule.
+
+## [1.2.47] - 2026-07-18
+
+### Added
+
+- Learned-device tracking: a successful upload records the connected
+  VID:PID -> board mapping as a `device 0xVVVV:0xPPPP <fqbn>` line in
+  arduino-requirements.txt (committed - mappings follow the repo across
+  Codespace rebuilds and forks). One entry per VID:PID, latest successful
+  upload wins. On connect, a learned mapping overrides the tier catalog:
+  the board is auto-selected and mismatch warnings are suppressed for that
+  pair. New GET/POST /api/devices/learned endpoints on both servers; the
+  extension's environment sync seeds the server from the file and persists
+  runtime learns back through the existing single-writer path. 10 new test
+  assertions cover the request contract, both success paths, the file
+  format parser/serializer agreement, and the sync lifecycle.
+
+## [1.2.46] - 2026-07-18
+
+### Added
+
+- Three-tier board identification (boards.json `tier` field):
+  - Tier 1 = official Arduino VID:PIDs (auto-picker tries first).
+  - Tier 2 = probable non-Arduino devices, exactly one board per VID:PID
+    (auto-picker fallback): Uno compatible (CH340), Nano (FTDI), ESP32 Dev
+    Module (CP210x / CH9102), Wemos D1 mini, Raspberry Pi Pico, Teensy 4.1.
+  - Tier 3 = boards sharing an already-used chip (never auto-selected;
+    only suppress mismatch warnings): Pico W, Teensy 4.0, NodeMCU, D1.
+  - New pure boardResolver module implements the policy: learned mapping
+    (future) -> tier 1 -> tier 2; mismatch warnings now fire ONLY when the
+    device positively identifies as a different official board, replacing
+    the ad-hoc bridge-chip VID allowlist.
+  - 13 new test assertions: tier schema, VID:PID uniqueness across tiers
+    1+2, tier-3 duplicates rule, and resolver/mismatch policy unit tests.
+
 ## [1.2.45] - 2026-07-17
 
 ### Fixed

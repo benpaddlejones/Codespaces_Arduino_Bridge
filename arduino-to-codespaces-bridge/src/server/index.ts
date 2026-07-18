@@ -173,6 +173,12 @@ export class BridgeServer extends EventEmitter {
   private lastLibraryIndexUpdate?: number;
   private cachedBoardUrls: string[] = [];
   /**
+   * Learned device mappings: "0xVVVV:0xPPPP" -> FQBN, proven by a
+   * successful upload. Seeded from arduino-requirements.txt at sync time;
+   * persisted back to the file by the environment sync controller.
+   */
+  private learnedDevices: Map<string, string> = new Map();
+  /**
    * Server version, tracking the extension's published version (single source
    * of truth: package.json). The web client is built with the same value, so
    * client and server always match for a given build — a mismatch therefore
@@ -810,6 +816,41 @@ export class BridgeServer extends EventEmitter {
     this.app.post("/api/restart", (_req: Request, res: Response) => {
       res.json({ success: true, log: "Restarting bridge server..." });
       setTimeout(() => this.emit("restartRequested"), 100);
+    });
+
+    // Learned device mappings (VID:PID -> FQBN, proven by successful upload)
+    this.app.get("/api/devices/learned", (_req: Request, res: Response) => {
+      res.json({ success: true, devices: this.getLearnedDevices() });
+    });
+
+    this.app.post("/api/devices/learned", (req: Request, res: Response) => {
+      const { vid, pid, fqbn } = req.body ?? {};
+      const vidNum = Number(vid);
+      const pidNum = Number(pid);
+      const validIds =
+        Number.isInteger(vidNum) &&
+        Number.isInteger(pidNum) &&
+        vidNum > 0 &&
+        vidNum <= 0xffff &&
+        pidNum > 0 &&
+        pidNum <= 0xffff;
+      const validFqbn =
+        typeof fqbn === "string" &&
+        /^[\w-]+:[\w-]+:[\w-]+$/.test(fqbn) &&
+        this.isSafeCliArg(fqbn);
+      if (!validIds || !validFqbn) {
+        return res
+          .status(400)
+          .json({ success: false, error: "Invalid vid/pid/fqbn" });
+      }
+
+      const hex = (n: number) => `0x${n.toString(16).padStart(4, "0")}`;
+      const key = `${hex(vidNum)}:${hex(pidNum)}`;
+      this.learnedDevices.set(key, fqbn);
+      this.log(`Learned device mapping: ${key} -> ${fqbn}`);
+      // Persist via the environment sync controller (single file writer)
+      this.emit("environmentChanged");
+      res.json({ success: true, devices: this.getLearnedDevices() });
     });
 
     // Board listing
@@ -2285,6 +2326,27 @@ export class BridgeServer extends EventEmitter {
    */
   getPort(): number {
     return this.port;
+  }
+
+  /**
+   * Get the learned device mappings as a serializable list.
+   * @returns Device entries sorted by key
+   */
+  getLearnedDevices(): { key: string; fqbn: string }[] {
+    return [...this.learnedDevices.entries()]
+      .map(([key, fqbn]) => ({ key, fqbn }))
+      .sort((a, b) => a.key.localeCompare(b.key));
+  }
+
+  /**
+   * Seed the learned device map from the requirements file (file is the
+   * source of truth at sync time; runtime uploads then update both).
+   * @param devices Device entries parsed from arduino-requirements.txt
+   */
+  seedLearnedDevices(devices: { key: string; fqbn: string }[]): void {
+    this.learnedDevices = new Map(
+      (devices || []).map((d) => [d.key.toLowerCase(), d.fqbn]),
+    );
   }
 
   /**

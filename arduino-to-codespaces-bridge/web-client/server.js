@@ -548,6 +548,98 @@ function formatUptime(seconds) {
 }
 
 /**
+ * Learned device mappings (VID:PID -> FQBN, proven by successful upload).
+ * Dev-server parity with the extension server: entries live in the
+ * `# Devices` section of arduino-requirements.txt as
+ * `device 0xVVVV:0xPPPP <fqbn>` lines.
+ */
+const REQUIREMENTS_PATH = path.join(WORKSPACE_ROOT, "arduino-requirements.txt");
+const DEVICE_LINE_RE = /^device\s+(0x[0-9a-fA-F]{4}:0x[0-9a-fA-F]{4})\s+(\S+)/;
+
+/**
+ * Parse learned device lines from arduino-requirements.txt.
+ * @returns {{key: string, fqbn: string}[]} Sorted device entries
+ */
+function readLearnedDevices() {
+  let content = "";
+  try {
+    content = fs.readFileSync(REQUIREMENTS_PATH, "utf8");
+  } catch {
+    return [];
+  }
+  const map = new Map();
+  for (const line of content.split(/\r?\n/)) {
+    const m = line.trim().match(DEVICE_LINE_RE);
+    if (m) map.set(m[1].toLowerCase(), m[2]);
+  }
+  return [...map.entries()]
+    .map(([key, fqbn]) => ({ key, fqbn }))
+    .sort((a, b) => a.key.localeCompare(b.key));
+}
+
+/**
+ * Persist a learned device entry (latest wins per key) into the
+ * `# Devices` section of arduino-requirements.txt.
+ * @param {string} key - "0xVVVV:0xPPPP"
+ * @param {string} fqbn - Board FQBN
+ */
+function writeLearnedDevice(key, fqbn) {
+  let content = "";
+  try {
+    content = fs.readFileSync(REQUIREMENTS_PATH, "utf8");
+  } catch {
+    content = "# Arduino Bridge Configuration\n";
+  }
+  // Drop any existing line for this key, then append into the section
+  const lines = content
+    .split(/\r?\n/)
+    .filter((line) => !line.trim().startsWith(`device ${key}`));
+  let text = lines.join("\n").trimEnd();
+  if (!text.includes("# Devices (learned from successful uploads)")) {
+    text += "\n\n# Devices (learned from successful uploads)";
+  }
+  text += `\ndevice ${key} ${fqbn}\n`;
+  fs.writeFileSync(REQUIREMENTS_PATH, text, "utf8");
+}
+
+app.get("/api/devices/learned", (req, res) => {
+  try {
+    res.json({ success: true, devices: readLearnedDevices() });
+  } catch (error) {
+    res.status(500).json({ success: false, devices: [], error: error.message });
+  }
+});
+
+app.post("/api/devices/learned", (req, res) => {
+  const { vid, pid, fqbn } = req.body || {};
+  const vidNum = Number(vid);
+  const pidNum = Number(pid);
+  const validIds =
+    Number.isInteger(vidNum) &&
+    Number.isInteger(pidNum) &&
+    vidNum > 0 &&
+    vidNum <= 0xffff &&
+    pidNum > 0 &&
+    pidNum <= 0xffff;
+  const validFqbn =
+    typeof fqbn === "string" && /^[\w-]+:[\w-]+:[\w-]+$/.test(fqbn);
+  if (!validIds || !validFqbn) {
+    return res
+      .status(400)
+      .json({ success: false, error: "Invalid vid/pid/fqbn" });
+  }
+  const hex = (n) => `0x${n.toString(16).padStart(4, "0")}`;
+  const key = `${hex(vidNum)}:${hex(pidNum)}`;
+  try {
+    writeLearnedDevice(key, fqbn);
+    console.log(`[Devices] Learned mapping: ${key} -> ${fqbn}`);
+    res.json({ success: true, devices: readLearnedDevices() });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
  * Health check endpoint for monitoring
  * Client polls this every 30s to detect server availability
  */

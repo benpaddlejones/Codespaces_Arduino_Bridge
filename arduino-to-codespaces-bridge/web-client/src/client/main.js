@@ -21,6 +21,11 @@ import { LibraryManagerUI } from "./ui/LibraryManagerUI.js";
 import { ReferenceUI } from "./ui/ReferenceUI.js";
 import { DriversUI } from "./ui/DriversUI.js";
 import { trapFocus, releaseFocus } from "./ui/focusTrap.js";
+import {
+  resolveBoardForDevice,
+  shouldWarnMismatch,
+} from "./services/boardResolver.js";
+import { UploadReporter } from "./services/utils/UploadReporter.js";
 import { Logger } from "../shared/Logger.js";
 
 // =============================================================================
@@ -361,7 +366,9 @@ const libraryManager = new LibraryManagerUI("libraries-view");
 const referenceUI = new ReferenceUI("reference-view");
 const driversUI = new DriversUI("drivers-view");
 
-setupConsoleBridge(terminal);
+// Upload trace stays in the browser console (UploadLogger writes there);
+// the terminal only receives the reporter's fixed phase lines + summary.
+const uploadReporter = new UploadReporter((text) => terminal.write(text));
 
 logger.info(`Version: ${CLIENT_VERSION}`);
 logger.info(`Loaded at: ${new Date().toISOString()}`);
@@ -649,90 +656,6 @@ function openViewWithSearch(viewName, searchTerm) {
 
 let isPlotterMode = false;
 
-function setupConsoleBridge(terminalInstance) {
-  if (!terminalInstance || typeof terminalInstance.write !== "function") {
-    return;
-  }
-
-  const original = {
-    log: console.log.bind(console),
-    info: console.info.bind(console),
-    warn: console.warn.bind(console),
-    error: console.error.bind(console),
-    debug: console.debug
-      ? console.debug.bind(console)
-      : console.log.bind(console),
-  };
-
-  const levelStyles = {
-    log: { icon: "ℹ️", color: "\u001b[36m" },
-    info: { icon: "ℹ️", color: "\u001b[36m" },
-    warn: { icon: "⚠️", color: "\u001b[33m" },
-    error: { icon: "❌", color: "\u001b[31m" },
-    debug: { icon: "🐞", color: "\u001b[90m" },
-  };
-
-  const formatArg = (arg) => {
-    if (arg instanceof Error) {
-      return arg.stack || `${arg.name}: ${arg.message}`;
-    }
-    if (typeof arg === "object" && arg !== null) {
-      if (arg instanceof ArrayBuffer) {
-        return `ArrayBuffer(${arg.byteLength})`;
-      }
-      if (ArrayBuffer.isView(arg)) {
-        return `${arg.constructor.name}(${arg.length})`;
-      }
-      try {
-        return JSON.stringify(arg, null, 2);
-      } catch (jsonError) {
-        return String(arg);
-      }
-    }
-    return String(arg);
-  };
-
-  const writeToTerminal = (level, args) => {
-    const style = levelStyles[level] || levelStyles.log;
-    const timestamp = new Date().toISOString().slice(11, 23);
-    const message = args.length
-      ? args.map((arg) => formatArg(arg)).join(" ")
-      : "";
-    if (!message) {
-      return;
-    }
-    const normalized = message.replace(/\r\n|\r|\n/g, "\r\n");
-    terminalInstance.write(
-      `\r\n${style.color}[${timestamp}] ${style.icon} ${normalized}\u001b[0m\r\n`,
-    );
-  };
-
-  console.log = (...args) => {
-    writeToTerminal("log", args);
-    original.log(...args);
-  };
-
-  console.info = (...args) => {
-    writeToTerminal("info", args);
-    original.info(...args);
-  };
-
-  console.warn = (...args) => {
-    writeToTerminal("warn", args);
-    original.warn(...args);
-  };
-
-  console.error = (...args) => {
-    writeToTerminal("error", args);
-    original.error(...args);
-  };
-
-  console.debug = (...args) => {
-    writeToTerminal("debug", args);
-    original.debug(...args);
-  };
-}
-
 function setBridgeStatus({ online, message = "", detail = "", busy = false }) {
   if (!bridgeStatusBanner) return;
 
@@ -870,6 +793,10 @@ let availableBoards = [];
 /** Boards known to the bridge by VID/PID (from boards.json), including
  *  boards whose platform core is NOT installed yet. */
 let knownBoardsCatalog = [];
+/** @type {Map<string, string>} devicePairKey -> FQBN learned from
+ *  successful uploads (persisted in arduino-requirements.txt). Populated
+ *  by the learned-device tracking feature; overrides all tiers. */
+const learnedDeviceMap = new Map();
 
 // Load Boards
 async function loadBoards() {
@@ -1049,10 +976,71 @@ async function initialize() {
   const [boardsOk, sketchesOk] = await Promise.all([
     loadBoards(),
     loadSketches(),
+    loadLearnedDevices(),
   ]);
   updateCompileButtons();
   void checkPlatformsInstalled();
   return boardsOk && sketchesOk;
+}
+
+/**
+ * Load learned device mappings (VID:PID -> FQBN, proven by successful
+ * uploads and persisted in arduino-requirements.txt) into the resolver's
+ * map. Non-fatal: auto-detect simply falls back to the tier catalog.
+ * @returns {Promise<boolean>} True when the list loaded
+ */
+async function loadLearnedDevices() {
+  try {
+    const res = await bridgeFetch("/api/devices/learned");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    learnedDeviceMap.clear();
+    for (const d of data.devices || []) {
+      const [vidHex, pidHex] = d.key.split(":");
+      const vid = parseInt(vidHex, 16);
+      const pid = parseInt(pidHex, 16);
+      if (vid && pid && d.fqbn) {
+        learnedDeviceMap.set(d.key.toLowerCase(), d.fqbn);
+      }
+    }
+    if (learnedDeviceMap.size > 0) {
+      logger.info(`Loaded ${learnedDeviceMap.size} learned device mapping(s)`);
+    }
+    return true;
+  } catch (error) {
+    logger.warn("Could not load learned devices", error);
+    return false;
+  }
+}
+
+/**
+ * Record a successful upload as a learned device mapping (latest upload
+ * wins per VID:PID). Fire-and-forget: failures only log.
+ * @param {SerialPort} port - The port the device was CONNECTED on
+ * @param {string} fqbn - Board that was successfully uploaded
+ */
+async function recordLearnedDevice(port, fqbn) {
+  try {
+    const info = port?.getInfo?.();
+    if (!info?.usbVendorId || !info?.usbProductId || !fqbn) return;
+    const hex = (n) => `0x${n.toString(16).padStart(4, "0")}`;
+    const key = `${hex(info.usbVendorId)}:${hex(info.usbProductId)}`;
+    learnedDeviceMap.set(key, fqbn);
+    const res = await bridgeFetch("/api/devices/learned", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        vid: info.usbVendorId,
+        pid: info.usbProductId,
+        fqbn,
+      }),
+    });
+    if (res.ok) {
+      logger.info(`Learned device mapping: ${key} -> ${fqbn}`);
+    }
+  } catch (error) {
+    logger.warn("Could not record learned device", error);
+  }
 }
 
 /**
@@ -1451,20 +1439,19 @@ async function handleUpload(port, firmwareData, fqbn) {
 
     // 5. Flash. The upload may return a different port when the device
     // re-enumerated into its bootloader (BOSSA/DFU boards).
+    uploadReporter.phase("write", "Flashing firmware\u2026");
     activePort =
       (await uploadManager.upload(
         activePort,
         firmwareData,
         (progress, status) => {
-          if (status) {
-            terminal.write(`\r${status}: ${progress}%`);
-          } else {
-            terminal.write(`\rFlashing: ${progress}%`);
-          }
+          uploadReporter.progress(progress, status || "Flashing");
         },
         fqbn,
       )) || activePort;
-    terminal.write("\r\nUpload Complete!\r\n");
+
+    // Remember this VID:PID -> board pairing (latest successful upload wins)
+    void recordLearnedDevice(port, fqbn);
 
     // 6. Reconnect Serial Monitor using current baud selection
     try {
@@ -1490,6 +1477,7 @@ async function handleUpload(port, firmwareData, fqbn) {
       terminal.write("\r\nWaiting for device to restart...\r\n");
       await new Promise((r) => setTimeout(r, 2000));
 
+      uploadReporter.phase("reconnect", "Reconnecting serial monitor\u2026");
       let reconnectPort = activePort;
       const portInfo = activePort.getInfo();
       if (portInfo.usbVendorId) {
@@ -1538,10 +1526,12 @@ async function handleUpload(port, firmwareData, fqbn) {
 
       // Resume serial monitor after successful upload
       serialManager.resume();
-      terminal.write("Serial monitor reconnected.\r\n");
+      uploadReporter.success("Upload complete - serial monitor reconnected");
     } catch (e) {
       logger.error("Reconnect failed", e);
-      terminal.write("\r\nReconnect failed. Please connect manually.\r\n");
+      uploadReporter.success(
+        "Upload complete - reconnect the serial monitor manually",
+      );
       // Resume serial monitor even on reconnect failure
       serialManager.resume();
       // Reset UI to disconnected state
@@ -1594,15 +1584,13 @@ async function handleUpload(port, firmwareData, fqbn) {
             newPort,
             firmwareData,
             (progress, status) => {
-              if (status) {
-                terminal.write(`\r${status}: ${progress}%`);
-              } else {
-                terminal.write(`\rFlashing: ${progress}%`);
-              }
+              uploadReporter.progress(progress, status || "Flashing");
             },
             fqbn,
           );
-          terminal.write("\r\nUpload Complete!\r\n");
+
+          // Remember the ORIGINAL (app-mode) pairing for auto-detect
+          void recordLearnedDevice(port, fqbn);
 
           // Try to reconnect to the original port (device reboots after flash)
           try {
@@ -1625,9 +1613,12 @@ async function handleUpload(port, firmwareData, fqbn) {
             }
             // Resume serial monitor after successful bootloader reconnect
             serialManager.resume();
+            uploadReporter.success(
+              "Upload complete - serial monitor reconnected",
+            );
           } catch (e) {
-            terminal.write(
-              "\r\nDevice rebooted. Please reconnect manually.\r\n",
+            uploadReporter.success(
+              "Upload complete - device rebooted, reconnect manually",
             );
             serialManager.resume();
             connectBtn.disabled = false;
@@ -1637,7 +1628,10 @@ async function handleUpload(port, firmwareData, fqbn) {
           }
         } catch (e) {
           logger.error("Bootloader flash failed", e);
-          terminal.write(`\r\nBootloader flash failed: ${e.message}\r\n`);
+          uploadReporter.failure(
+            e,
+            "Double-tap RESET and try the upload again.",
+          );
           serialManager.resume();
           connectBtn.disabled = false;
           disconnectBtn.disabled = true;
@@ -1719,7 +1713,7 @@ async function handleUpload(port, firmwareData, fqbn) {
     }
 
     logger.error("Upload failed", error);
-    terminal.write(`\r\nUpload Error: ${error.message}\r\n`);
+    uploadReporter.failure(error);
 
     // Try to reconnect
     try {
@@ -1878,9 +1872,18 @@ compileUploadBtn.addEventListener("click", async () => {
   // Note: Server-side upload was attempted but doesn't work in GitHub Codespaces
   // since the Arduino is connected to the user's browser, not the server.
 
+  const boardName = availableBoards.find((b) => b.fqbn === fqbn)?.name || fqbn;
+  const sketchName = sketchPath.split("/").pop();
+  uploadReporter.start(`${sketchName} \u2192 ${boardName}`);
+
   // 1. Compile
+  uploadReporter.phase("compile", "Compiling sketch\u2026");
   const artifactUrl = await compileSketch();
   if (!artifactUrl) {
+    uploadReporter.failure(
+      "Compilation failed",
+      "See the compiler output above.",
+    );
     // Resume on compile failure
     serialManager.resume();
     terminal.write("[Serial Monitor resumed]\r\n");
@@ -1890,7 +1893,7 @@ compileUploadBtn.addEventListener("click", async () => {
   // 2. Download Firmware
   let firmwareData;
   try {
-    terminal.write("Downloading firmware...\r\n");
+    uploadReporter.phase("prepare", "Preparing firmware and port\u2026");
     const response = await bridgeFetch(artifactUrl, { timeoutMs: 60000 });
     if (!response.ok) throw new Error("Failed to download firmware");
     firmwareData = await response.arrayBuffer();
@@ -1903,7 +1906,7 @@ compileUploadBtn.addEventListener("click", async () => {
     // Start Upload Process
     await handleUpload(savedPort, firmwareData, fqbn);
   } catch (error) {
-    terminal.write(`\r\nError: ${error.message}\r\n`);
+    uploadReporter.failure(error);
   }
 });
 
@@ -1986,7 +1989,8 @@ async function runI2cScan() {
   lastWorkingBaudRate = I2C_SCANNER_BAUD;
 
   try {
-    terminal.write("Downloading firmware...\r\n");
+    uploadReporter.start(`I2C scanner \u2192 ${fqbn}`);
+    uploadReporter.phase("prepare", "Preparing firmware and port\u2026");
     const response = await bridgeFetch(artifactUrl, { timeoutMs: 60000 });
     if (!response.ok) throw new Error("Failed to download firmware");
     const firmwareData = await response.arrayBuffer();
@@ -2000,7 +2004,7 @@ async function runI2cScan() {
       "\r\n[I2C] Scanner running — results appear above every 10 seconds.\r\n",
     );
   } catch (error) {
-    terminal.write(`\r\n[I2C] Error: ${error.message}\r\n`);
+    uploadReporter.failure(error);
     serialManager.resume();
   }
 }
@@ -2033,52 +2037,17 @@ function checkBoardMismatch(port, fqbn) {
       return;
     }
 
-    // If board has no VID/PID metadata, skip check
-    if (!selectedBoard.vid || !selectedBoard.pid) {
-      resolve(true);
-      return;
-    }
-
-    // Check if connected VID/PID matches any of the board's known VID/PIDs
-    const vidMatch = selectedBoard.vid.some(
-      (v) => parseInt(v) === portInfo.usbVendorId,
+    // Tier-driven policy: warn ONLY when the device positively identifies
+    // as a DIFFERENT tier-1 (official) board, the selected board does not
+    // list the pair in any tier, and no learned mapping covers it.
+    const { warn, detectedName } = shouldWarnMismatch(
+      portInfo.usbVendorId,
+      portInfo.usbProductId,
+      fqbn,
+      knownBoardsCatalog,
+      learnedDeviceMap,
     );
-    const pidMatch = selectedBoard.pid.some(
-      (p) => parseInt(p) === portInfo.usbProductId,
-    );
-
-    if (vidMatch && pidMatch) {
-      resolve(true); // Match found, proceed
-      return;
-    }
-
-    // Generic USB-to-UART bridge chips (CP210x, CH340, FTDI, Prolific)
-    // identify the bridge, NOT the board - countless UNO/Nano clones use
-    // them, so a non-matching VID/PID is expected and proves nothing.
-    // Warning here would be a false alarm on every clone board.
-    const GENERIC_UART_VIDS = [
-      0x10c4, // Silicon Labs CP210x
-      0x1a86, // WCH CH340/CH9102
-      0x0403, // FTDI FT232
-      0x067b, // Prolific PL2303
-    ];
-    if (GENERIC_UART_VIDS.includes(portInfo.usbVendorId)) {
-      resolve(true);
-      return;
-    }
-
-    // Mismatch detected - try to find what board IS connected
-    const connectedBoard = availableBoards.find((b) => {
-      if (!b.vid || !b.pid) return false;
-      const vMatch = b.vid.some((v) => parseInt(v) === portInfo.usbVendorId);
-      const pMatch = b.pid.some((p) => parseInt(p) === portInfo.usbProductId);
-      return vMatch && pMatch;
-    });
-
-    // Only warn on a CLEAR mismatch: the connected device is positively
-    // identified as a different known board. An unrecognised VID/PID is
-    // ambiguous (clone chips, bootloader modes), not proof of a mismatch.
-    if (!connectedBoard) {
+    if (!warn) {
       resolve(true);
       return;
     }
@@ -2092,7 +2061,7 @@ function checkBoardMismatch(port, fqbn) {
       .toString(16)
       .toUpperCase()
       .padStart(4, "0");
-    const connectedLabel = `${connectedBoard.name} (VID:${vidHex}, PID:${pidHex})`;
+    const connectedLabel = `${detectedName} (VID:${vidHex}, PID:${pidHex})`;
 
     // Update modal content
     mismatchConnected.textContent = connectedLabel;
@@ -2171,49 +2140,38 @@ connectBtn.addEventListener("click", async () => {
   try {
     // Get port info for board detection
     const portInfo = port.getInfo();
-    let detectedBoard = null;
 
     if (portInfo.usbVendorId && portInfo.usbProductId) {
-      detectedBoard = availableBoards.find((b) => {
-        if (!b.vid || !b.pid) return false;
-        const vidMatch = b.vid.some(
-          (v) => parseInt(v) === portInfo.usbVendorId,
-        );
-        const pidMatch = b.pid.some(
-          (p) => parseInt(p) === portInfo.usbProductId,
-        );
-        return vidMatch && pidMatch;
-      });
+      // Three-tier resolution: learned mapping -> tier 1 (official Arduino
+      // VID:PIDs) -> tier 2 (most common board per clone chip). Tier 3 is
+      // never auto-selected.
+      const resolved = resolveBoardForDevice(
+        portInfo.usbVendorId,
+        portInfo.usbProductId,
+        knownBoardsCatalog,
+        learnedDeviceMap,
+      );
 
-      if (detectedBoard) {
-        boardSelect.value = detectedBoard.fqbn;
-        terminal.write(`\r\nAuto-detected board: ${detectedBoard.name}\r\n`);
-        updateCompileButtons();
-        // Setting .value programmatically does NOT fire the change event,
-        // so regenerate IntelliSense for the detected board explicitly
-        void updateIntellisenseForBoard(detectedBoard.fqbn);
-      } else {
-        // The board is recognised by VID/PID but absent from the installed
-        // boards list - its platform core is not installed yet.
-        const knownBoard = knownBoardsCatalog.find((b) => {
-          if (!b.vid || !b.pid) return false;
-          const vidMatch = b.vid.some(
-            (v) => parseInt(v) === portInfo.usbVendorId,
-          );
-          const pidMatch = b.pid.some(
-            (p) => parseInt(p) === portInfo.usbProductId,
-          );
-          return vidMatch && pidMatch;
-        });
-        if (knownBoard && knownBoard.fqbn) {
-          const platformId = knownBoard.fqbn.split(":").slice(0, 2).join(":");
+      if (resolved) {
+        const installed = availableBoards.find((b) => b.fqbn === resolved.fqbn);
+        if (installed) {
+          boardSelect.value = resolved.fqbn;
+          terminal.write(`\r\nAuto-detected board: ${installed.name}\r\n`);
+          updateCompileButtons();
+          // Setting .value programmatically does NOT fire the change event,
+          // so regenerate IntelliSense for the detected board explicitly
+          void updateIntellisenseForBoard(resolved.fqbn);
+        } else {
+          // Board recognised but its platform core is not installed yet
+          const platformId = resolved.fqbn.split(":").slice(0, 2).join(":");
+          const boardName = resolved.name || resolved.fqbn;
           terminal.write(
-            `\r\nDetected ${knownBoard.name}, but its board platform (${platformId}) is not installed.\r\n`,
+            `\r\nDetected ${boardName}, but its board platform (${platformId}) is not installed.\r\n`,
           );
           showGuidance({
             title: "\ud83d\udce6 Board platform required",
             lines: [
-              `Your ${knownBoard.name} was detected, but the "${platformId}" platform needed to compile for it is not installed.`,
+              `Your ${boardName} was detected, but the "${platformId}" platform needed to compile for it is not installed.`,
               "Open the Board Manager tab, find the board, and click Install (this can take a minute or two).",
               "When the install finishes, select your sketch and compile again.",
             ],
@@ -2221,7 +2179,7 @@ connectBtn.addEventListener("click", async () => {
             onAction: () =>
               openViewWithSearch(
                 "boards",
-                knownBoard.name.replace(/^Arduino\s+/i, ""),
+                boardName.replace(/^Arduino\s+/i, ""),
               ),
           });
         }

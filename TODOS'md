@@ -1,6 +1,36 @@
-- Align Pid id's to Arduino
-- Once device set, remains set for that PID in repo no warnings
-- update README.md
+- ✅ DONE (1.2.46) Three-tier board identification (boards.json gains a `tier` field):
+  - Tier 1 = official Arduino VID:PIDs exactly as defined in the official
+    firmware/boards.txt (already verified). Auto-picker tries tier 1 first.
+  - Tier 2 = probable non-Arduino devices (CH340/CP210x/FTDI clones, common
+    third-party boards). Each VID:PID appears exactly ONCE in tier 2 - the
+    most common board for that chip. Auto-picker falls back to tier 2 when
+    no tier-1 match exists.
+  - Tier 3 = the remaining boards that share an already-used VID:PID combo
+    (duplicates). NEVER used by the auto-selector; only consulted to
+    suppress mismatch warnings - selecting any tier-2 or tier-3 board that
+    lists the connected VID:PID shows no warning.
+  - Mismatch warnings are driven by tier, replacing the current ad-hoc
+    bridge-chip VID allowlist in checkBoardMismatch().
+- ✅ DONE (1.2.47) Learned-device tracking (overrides tiers 1 and 2):
+  - Key = VID:PID pair (Web Serial exposes no USB serial number, so two
+    boards with identical chips share one mapping - accepted).
+  - Trigger = successful upload: record VID:PID -> FQBN in
+    arduino-requirements.txt (committed; mappings follow the repo across
+    Codespace rebuilds and forks - accepted).
+  - One entry per VID:PID, latest successful upload wins (e.g. Uno kit
+    swapped for R4 Minima: next successful upload replaces the entry).
+  - A learned mapping ALWAYS wins over tier 1/2: on connect, auto-select
+    the learned board and never warn for that VID:PID again.
+  - Server owns the file writes (same environmentChanged sync path the
+    platform/library lists already use).
+
+- ✅ DONE (1.2.48) Upload reporter module (consistent, quiet terminal):
+  - Terminal shows fixed phases only - compile -> prepare -> erase ->
+    write -> verify -> reset -> reconnect - one progress line each plus a
+    single consistent success/failure summary.
+  - Full protocol trace (CMD/RSP/timing) goes to the browser console only,
+    no UI toggle. All strategies (BOSSA/DFU/AVR/ESP) route through the one
+    reporter so output is identical across boards.
+
+- ✅ DONE Update README.md (root project README + extension README refresh)
 - purchase more hardware for testing
-- confirm devices that need a serial starter, will these devices always need serial begin even if no serial used in sketch? if yes validate
-- Make REPL upload less verbose and consistent. verbose details to. rowser console for debug purposes. Create a upload reporter module so always consistent.

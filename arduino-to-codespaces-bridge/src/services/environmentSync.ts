@@ -157,6 +157,10 @@ export class EnvironmentSyncController {
         return;
       }
 
+      // Seed the server's learned-device map from the file (the file is the
+      // source of truth at sync time; runtime uploads update both)
+      this.server.seedLearnedDevices(config.devices || []);
+
       await this.applyConfig(config);
     } finally {
       this.syncing = false;
@@ -512,7 +516,7 @@ export class EnvironmentSyncController {
       try {
         config = await readEnvironmentConfig(this.workspaceRoot);
       } catch {
-        config = { version: 1, platforms: [], libraries: [] };
+        config = { version: 1, platforms: [], libraries: [], devices: [] };
       }
 
       // Build new platforms list from installed platforms
@@ -535,11 +539,22 @@ export class EnvironmentSyncController {
       config.platforms = newPlatforms;
       config.libraries = newLibraries;
 
+      // Merge learned devices: file entries first, runtime map wins per key
+      const deviceMap = new Map(
+        (config.devices || []).map((d) => [d.key, d.fqbn]),
+      );
+      for (const d of this.server.getLearnedDevices()) {
+        deviceMap.set(d.key, d.fqbn);
+      }
+      config.devices = [...deviceMap.entries()]
+        .map(([key, fqbn]) => ({ key, fqbn }))
+        .sort((a, b) => a.key.localeCompare(b.key));
+
       // Write config
       await writeEnvironmentConfig(this.workspaceRoot, config);
 
       this.output.appendLine(
-        `[Env Sync] Updated config with ${newPlatforms.length} platforms, ${newLibraries.length} libraries`,
+        `[Env Sync] Updated config with ${newPlatforms.length} platforms, ${newLibraries.length} libraries, ${config.devices.length} learned devices`,
       );
     } catch (error: any) {
       this.output.appendLine(

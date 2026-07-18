@@ -1,29 +1,86 @@
 # Arduino to Codespaces Bridge
 
-Compile and upload Arduino sketches from GitHub Codespaces to physical Arduino boards connected to your local machine via Web Serial.
+Program physical Arduino boards from GitHub Codespaces: sketches compile in
+the cloud with the bundled `arduino-cli`, and your browser flashes the board
+on your desk over USB using Web Serial / WebUSB. No local Arduino IDE,
+toolchain, or CLI install is needed - ideal for classrooms and managed
+computers where only a Chromium browser is available.
 
 ## Features
 
-- **🔌 Web Serial Upload**: Upload compiled sketches directly to Arduino boards via your browser
-- **📝 Serial Monitor**: View serial output from your Arduino in a professional terminal
-- **📊 Serial Plotter**: Visualize data with a real-time plotter (Arduino Serial Plotter compatible)
-- **🔧 Board Manager**: Install and manage Arduino board cores
-- **📚 Library Manager**: Search, install, and manage Arduino libraries
-- **⚡ One-Click Workflow**: Compile in Codespaces, upload from your browser
+**Compile & upload**
+
+- **One-click Compile & Upload** - build in the Codespace, flash from the
+  browser using the board's native protocol (STK500 for AVR, SAM-BA/BOSSA
+  for SAMD/R4 WiFi/Nano 33 BLE, WebUSB DFU for the R4 Minima family,
+  esptool for ESP32)
+- **Quiet, consistent upload output** - fixed progress phases and a single
+  success/failure summary in the terminal; the full wire-protocol trace
+  (every command/response with timing) is available in the browser console
+  (F12) for debugging
+- **UF2/hex download mode** for boards without a browser-flashable
+  bootloader (Pico, Teensy): compile in the Codespace, download the
+  firmware file, flash with the board's own loader
+
+**Board handling**
+
+- **Board auto-detection** by USB VID/PID with a tiered catalog: official
+  Arduino ids match first, then common clone chips (CH340/CP210x/FTDI)
+- **Learned devices** - after a successful upload, the VID:PID → board
+  pairing is saved to `arduino-requirements.txt`; that board is
+  auto-selected (and never triggers a mismatch warning) on every future
+  connect, even in a rebuilt Codespace
+- **Mismatch guard** - warns before flashing only when the connected device
+  positively identifies as a _different_ official board (clone chips never
+  false-alarm)
+- **IntelliSense for .ino files** - `.vscode/c_cpp_properties.json` is
+  regenerated automatically for the selected board (correct compiler,
+  core/variant includes, defines)
+
+**Web UI (opens in Chrome/Edge via the forwarded port)**
+
+- **📝 Serial Monitor** - professional xterm.js terminal with timestamps,
+  DTR/RTS control, baud selection, auto-reconnect after uploads
+- **📊 Serial Plotter** - real-time charting, Arduino Serial Plotter
+  compatible
+- **🔧 Board Manager** - search/install/upgrade board cores, with one-click
+  presets for common third-party packages (Teensy, ESP32, ESP8266,
+  RP2040, Adafruit, SparkFun, Seeed, STM32)
+- **📚 Library Manager** - search, install, and manage Arduino libraries;
+  missing `#include`s in a failed compile produce install suggestions
+- **🛠️ Drivers tab** - per-OS USB driver directory (CP210x, CH340, FTDI,
+  R4 WinUSB, Teensy) with official download links and a "no serial device
+  found" checklist
+- **🔍 I2C scanner** - one click uploads a diagnostic sketch that scans the
+  bus and identifies 27+ common sensor/display modules
+
+**Reliability & reproducibility**
+
+- **Reproducible environments** - platforms, libraries and learned devices
+  tracked in a committed `arduino-requirements.txt`; a rebuilt or forked
+  Codespace restores itself automatically
+- **Resilient connection** - startup gate until the server is ready,
+  health monitoring with automatic recovery after Codespace sleep/wake,
+  request retries over the forwarded port, and clear guidance when the
+  Codespaces port session expires
 
 ## Requirements
 
-- **GitHub Codespaces** with `arduino-cli` installed
-- **Chrome or Edge browser** (required for Web Serial API)
-- **Arduino board** connected to your local machine via USB
+- **GitHub Codespaces** (or any remote VS Code environment) - `arduino-cli`
+  is bundled with the extension, no install needed
+- **Chrome or Edge browser** (required for the Web Serial / WebUSB APIs)
+- **Arduino board** connected to your local machine via USB (a DATA cable,
+  not charge-only)
 
 ## Usage
 
 1. Open a workspace containing Arduino sketches (`.ino` files)
 2. Click the Arduino Bridge icon in the activity bar or use the status bar button
-3. The extension will start the bridge server and open the web UI in your browser
-4. Click "Connect Port" to connect to your Arduino
+3. The extension starts the bridge server and opens the web UI in your browser
+4. Click "Connect Port" and pick your board - it is auto-detected and
+   selected by its USB id
 5. Select a sketch and click "Compile & Upload"
+6. The serial monitor reconnects automatically and shows your sketch output
 
 ## Commands
 
@@ -39,39 +96,50 @@ Compile and upload Arduino sketches from GitHub Codespaces to physical Arduino b
 
 | Setting                         | Default           | Description                               |
 | ------------------------------- | ----------------- | ----------------------------------------- |
-| `arduinoBridge.serverPort`      | `3001`            | Port for the bridge server                |
+| `arduinoBridge.serverPort`      | `3000`            | Port for the bridge server                |
 | `arduinoBridge.autoStartServer` | `true`            | Auto-start server on extension activation |
 | `arduinoBridge.defaultBoard`    | `arduino:avr:uno` | Default board FQBN for compilation        |
 | `arduinoBridge.showStatusBar`   | `true`            | Show status bar item                      |
 
 ### Environment Configuration
 
-The workspace root contains an `arduino-bridge.config.json` file that lists
-the board platforms and libraries to preload. When the bridge server starts,
-it reads this file and installs any missing items automatically. Commit changes
-to this file so collaborators inherit the same environment. Entries are sorted
-alphabetically to keep merges friendly—add new platforms or libraries as
-objects, for example:
+The workspace root contains an `arduino-requirements.txt` file that tracks
+the environment. When the bridge server starts, it reads this file and
+installs any missing platforms and libraries automatically; after installs
+and successful uploads it is updated in place. Commit it so collaborators
+(and rebuilt Codespaces) inherit the same environment. Format:
 
-```json
-{
-  "version": 1,
-  "platforms": [{ "id": "arduino:avr" }],
-  "libraries": [{ "name": "ArduinoJson", "version": "6.21.2" }]
-}
+```text
+# Platforms
+platform arduino:avr 1.8.8
+
+# Libraries
+library Servo 1.3.0
+
+# Devices (learned from successful uploads)
+device 0x2341:0x8054 arduino:samd:mkrwifi1010
 ```
+
+`device` lines are written automatically after a successful upload: the
+USB VID:PID pair is remembered so that board is auto-selected (and never
+warned about) the next time it connects. One entry per VID:PID - the latest
+successful upload wins.
 
 ## Supported Boards
 
-| Board                 | Protocol     | Status          |
-| --------------------- | ------------ | --------------- |
-| Arduino Uno (R3)      | STK500       | ✅ Working      |
-| Arduino Uno R4 WiFi   | BOSSA        | ✅ Working \*   |
-| Arduino Uno R4 Minima | DFU (WebUSB) | ✅ Working \*   |
-| Arduino Nano R4       | DFU (WebUSB) | ✅ Working \*   |
-| Arduino Nano          | STK500       | ✅ Working      |
-| Arduino Mega 2560     | STK500v2     | ✅ Working      |
-| ESP32                 | ESPTool      | 🔄 Experimental |
+| Board                           | Protocol         | Status                         |
+| ------------------------------- | ---------------- | ------------------------------ |
+| Arduino Uno (R3)                | STK500           | ✅ Working                     |
+| Arduino Uno R4 WiFi             | BOSSA            | ✅ Working \*                  |
+| Arduino Uno R4 Minima           | DFU (WebUSB)     | ✅ Working \*                  |
+| Arduino Nano R4                 | DFU (WebUSB)     | ✅ Working \*                  |
+| Arduino Nano                    | STK500           | ✅ Working                     |
+| Arduino Mega 2560               | STK500v2         | ✅ Working                     |
+| Arduino MKR WiFi 1010           | BOSSA            | ✅ Working                     |
+| MKR family / Nano 33 IoT / Zero | BOSSA            | ✅ Expected (same SAMD21 flow) |
+| Arduino Nano 33 BLE             | BOSSA            | ✅ Working                     |
+| ESP32                           | ESPTool          | 🔄 Experimental                |
+| Pico / Pico W / Teensy 4.x      | UF2/hex download | ✅ Compile + download          |
 
 \* All UNO R4 family boards (Minima, WiFi, Nano R4) require a one-time
 driver install on Windows - see
@@ -79,10 +147,10 @@ driver install on Windows - see
 
 ## How It Works
 
-1. **Compilation**: The extension runs `arduino-cli compile` inside your Codespace
-2. **Web UI**: A bundled Express server serves the bridge UI
-3. **Browser Upload**: The Web Serial API in your browser communicates directly with your Arduino
-4. **Port Forwarding**: Codespaces automatically forwards the server port to your browser
+1. **Compilation**: The extension runs the bundled `arduino-cli compile` inside your Codespace
+2. **Web UI**: A bundled Express server serves the bridge UI through the forwarded port
+3. **Browser Upload**: The Web Serial / WebUSB APIs in your browser speak the board's bootloader protocol directly over USB
+4. **Reconnect**: After flashing, the serial monitor reattaches to the re-enumerated board automatically
 
 ## Troubleshooting
 
@@ -94,8 +162,11 @@ driver install on Windows - see
 
 ### Board not detected?
 
-- Make sure `arduino-cli` is installed in your Codespace
-- Install the required board core via Board Manager
+- Auto-detection needs the board's platform core installed - open the Board
+  Manager tab and install it (a popup offers this automatically)
+- Boards with clone USB chips are detected as their most common identity
+  (e.g. CH340 → "Uno compatible"); after one successful upload the real
+  board is remembered
 
 ### Upload fails?
 
