@@ -174,8 +174,53 @@ export class WebSerialProvider {
         await new Promise((r) => setTimeout(r, PORT_CLOSE_DELAY_MS));
       }
 
-      serialLogger.info(`Opening port at ${baudRate} baud...`);
-      await this.port.open({ baudRate });
+      // Open with retry/backoff: Windows releases the COM handle a moment
+      // AFTER close() resolves (both ours above and other programs'), and a
+      // just-re-enumerated device can briefly refuse opens - a single
+      // attempt fails with "Failed to open serial port" in both cases.
+      const OPEN_ATTEMPTS = 4;
+      for (let attempt = 1; attempt <= OPEN_ATTEMPTS; attempt++) {
+        try {
+          serialLogger.info(
+            `Opening port at ${baudRate} baud...${
+              attempt > 1 ? ` (attempt ${attempt}/${OPEN_ATTEMPTS})` : ""
+            }`,
+          );
+          await this.port.open({ baudRate });
+          break;
+        } catch (openError) {
+          const msg = (openError?.message || "").toLowerCase();
+          const retryable = msg.includes("failed to open serial port");
+          if (!retryable || attempt === OPEN_ATTEMPTS) {
+            throw openError;
+          }
+          serialLogger.warn(
+            `Open failed (attempt ${attempt}/${OPEN_ATTEMPTS}) - retrying after backoff`,
+          );
+          await new Promise((r) => setTimeout(r, 400 * attempt));
+
+          // If the device re-enumerated, our SerialPort object is dead -
+          // adopt the fresh granted port with the same USB identity
+          if (this.port.connected === false) {
+            try {
+              const info = this.port.getInfo();
+              const granted = await navigator.serial.getPorts();
+              const fresh = granted.find(
+                (p) =>
+                  p.connected !== false &&
+                  p.getInfo().usbVendorId === info.usbVendorId &&
+                  p.getInfo().usbProductId === info.usbProductId,
+              );
+              if (fresh && fresh !== this.port) {
+                serialLogger.info("Adopting re-enumerated port for retry");
+                this.port = fresh;
+              }
+            } catch (refreshError) {
+              serialLogger.warn("Port refresh failed", refreshError);
+            }
+          }
+        }
+      }
 
       // Native USB boards (e.g., Uno R4) buffer output until DTR is asserted.
       // Raise both DTR/RTS like Arduino IDE so sketches start streaming data immediately.

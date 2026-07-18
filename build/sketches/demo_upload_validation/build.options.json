@@ -1,9 +1,9 @@
 {
   "additionalFiles": "",
-  "compiler.optimization_flags": "",
+  "compiler.optimization_flags": "-Os",
   "customBuildProperties": "",
-  "fqbn": "arduino:mbed_nano:nano33ble",
-  "hardwareFolders": "/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0,/home/node/.arduino15/packages/arduino/hardware/mbed_nano/4.6.0",
+  "fqbn": "arduino:samd:mzero_bl",
+  "hardwareFolders": "/home/node/.arduino15/packages/arduino/hardware/samd/1.8.14,/home/node/.arduino15/packages/arduino/hardware/samd/1.8.14",
   "otherLibrariesFolders": "/home/node/Arduino/libraries",
   "sketchLocation": "/workspaces/Codespaces_Arduino_Bridge/demo_upload_validation"
 }

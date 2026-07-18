@@ -108,14 +108,19 @@ export function shouldWarnMismatch(
     return { warn: false, detectedName: null };
   }
 
-  // Warn only when the device is positively identified as a different
-  // tier-1 (official) board. Tier-2/3 chips are shared across countless
-  // boards, so a non-match there proves nothing.
-  const tier1Match = catalog.find(
-    (b) => b.tier === 1 && boardListsPair(b, vid, pid),
+  // Warn only when the device is POSITIVELY identified as a different
+  // board: a tier-1 (official Arduino) match, or a tier-2 match whose
+  // VID:PID belongs to the device vendor itself (e.g. Raspberry Pi Pico,
+  // Teensy). Tier-2 entries flagged genericChip describe USB-UART bridge
+  // chips (CH340/CP210x/FTDI) shared across countless boards - a non-match
+  // there proves nothing, so they never warn.
+  const positiveMatch = catalog.find(
+    (b) =>
+      (b.tier === 1 || (b.tier === 2 && !b.genericChip)) &&
+      boardListsPair(b, vid, pid),
   );
-  if (tier1Match && tier1Match.fqbn !== selectedFqbn) {
-    return { warn: true, detectedName: tier1Match.name };
+  if (positiveMatch && positiveMatch.fqbn !== selectedFqbn) {
+    return { warn: true, detectedName: positiveMatch.name };
   }
 
   return { warn: false, detectedName: null };

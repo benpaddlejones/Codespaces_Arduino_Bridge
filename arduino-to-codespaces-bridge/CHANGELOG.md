@@ -6,6 +6,78 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Same-day debugging iterations are grouped into their release milestone.
 
+## [1.2.54] - 2026-07-18
+
+### Fixed
+
+- Board auto-detection catalog rebuilt AUTHORITATIVELY from the official
+  Arduino cores' boards.txt on github.com/arduino (avr, megaavr, samd, sam,
+  renesas, mbed) instead of piecemeal hand maintenance. 56 tier-1 boards
+  generated with every official VID/PID (both classic vid.N/pid.N and
+  pluggable-discovery upload_port formats parsed). Previously missing and
+  now detected: **Nano R4** (the reported bug), Nano Every, Uno WiFi Rev2,
+  Uno Mini, Uno with 0x006a/0x0210/0x0237 ids, Giga R1, Nicla family, Opta
+  variants, Portenta H7/C33, Edge Control, M0/M0 Pro, Tian, Due, Circuit
+  Playground Express, and all bootloader-mode ids across the range.
+  Official data conflicts resolved per the tier rules (M0/M0 Pro shared
+  pairs, Tian's twin console port demoted to tier 3). Curated tier-2/3
+  clone-chip entries preserved; the rebuild script is idempotent.
+- Protocol configs added for the newly catalogued SAMD boards (Circuit
+  Playground Express, M0/M0 Pro, Zero EDBG, Tian).
+
+## [1.2.53] - 2026-07-18
+
+### Fixed
+
+- Connecting a detected board whose platform is not installed looked like
+  broken auto-detection: the 1.2.51 anti-spam change suppressed the
+  terminal line together with the popup on repeat connects, so the second
+  and later connects in a session were completely silent. The "Detected X,
+  but its platform is not installed" line now always prints (with a Board
+  Manager pointer); only the popup is deduped per session.
+
+## [1.2.52] - 2026-07-18
+
+### Fixed
+
+- Persistent "Failed to open serial port" on Connect:
+  - The Connect open now retries up to 4 times with backoff. Windows
+    releases the COM handle a moment AFTER close() resolves (whether closed
+    by us or another program), and a just-re-enumerated device briefly
+    refuses opens - a single attempt failed in both cases. If the device
+    re-enumerated, the retry adopts the fresh granted port with the same
+    USB identity instead of reusing the dead port object.
+  - New cross-tab guard: bridge tabs announce themselves over a
+    BroadcastChannel, and opening the page while another tab is running
+    shows a clear warning - a second same-origin tab holding the port is
+    the most common cause of repeated open failures after hard refreshes.
+
+## [1.2.51] - 2026-07-18
+
+### Fixed
+
+- Connecting a board whose platform is not installed (e.g. a Raspberry Pi
+  Pico running MicroPython) no longer spams the "platform required" popup
+  and terminal line on every connect/reconnect attempt - the notice now
+  shows once per platform per session.
+- "Failed to open serial port" now produces an actionable message and
+  guidance dialog: the port is almost always held by another program
+  (Thonny, Arduino IDE, PuTTY, a second tab) or the device just
+  re-enumerated - close the other tool or replug, then retry.
+
+## [1.2.50] - 2026-07-18
+
+### Fixed
+
+- Mismatch warning missed vendor-identified non-Arduino devices: a
+  Raspberry Pi Pico connected while "Arduino M0" was selected uploaded
+  silently. Tier-2 catalog entries are now split by a genericChip flag:
+  USB-UART bridge chips (CH340/CP210x/FTDI/Holtek) still never warn (chip
+  id ≠ board id), but vendor-specific ids (Raspberry Pi 0x2E8A, PJRC
+  0x16C0) count as positive identification - selecting an unrelated board
+  for them now raises the mismatch dialog, while tier-3 alternates for the
+  same chip (e.g. Pico W) stay silent. 5 new test assertions.
+
 ## [1.2.49] - 2026-07-18
 
 ### Changed

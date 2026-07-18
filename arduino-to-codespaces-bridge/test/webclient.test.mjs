@@ -335,6 +335,66 @@ const warn4 = shouldWarnMismatch(
 );
 ok("mismatch: unknown VID:PID never warns (ambiguous)", warn4.warn === false);
 
+// Vendor-specific tier-2 devices are POSITIVE identification (the field
+// report: a Pico attached with "Arduino M0" selected silently uploaded)
+const warn5 = shouldWarnMismatch(
+  0x2e8a,
+  0x0003,
+  "arduino:samd:arduino_zero_native",
+  boards,
+  new Map(),
+);
+ok(
+  "mismatch: Raspberry Pi Pico vs selected SAMD board WARNS (vendor-specific tier 2)",
+  warn5.warn === true && /pico/i.test(warn5.detectedName || ""),
+);
+
+const warn6 = shouldWarnMismatch(
+  0x16c0,
+  0x0483,
+  "arduino:avr:uno",
+  boards,
+  new Map(),
+);
+ok(
+  "mismatch: Teensy vs selected Uno WARNS (vendor-specific tier 2)",
+  warn6.warn === true && /teensy/i.test(warn6.detectedName || ""),
+);
+
+// But selecting the Pico W (tier-3, same chip) for a Pico device is silent
+const warn7 = shouldWarnMismatch(
+  0x2e8a,
+  0x0003,
+  "rp2040:rp2040:rpipicow",
+  boards,
+  new Map(),
+);
+ok(
+  "mismatch: Pico device vs selected Pico W stays silent (tier-3 alternate)",
+  warn7.warn === false,
+);
+
+// genericChip integrity: every tier-2 bridge-chip entry is flagged, and the
+// vendor-specific ones are not
+ok(
+  "tier-2 generic bridge chips are flagged genericChip",
+  boards
+    .filter(
+      (b) =>
+        b.tier === 2 &&
+        b.vid.some((v) =>
+          [0x1a86, 0x10c4, 0x0403, 0x067b].includes(parseInt(v, 16)),
+        ),
+    )
+    .every((b) => b.genericChip === true),
+);
+ok(
+  "vendor-specific tier-2 entries (Pico, Teensy) are NOT flagged genericChip",
+  boards
+    .filter((b) => b.tier === 2 && ["0x2e8a", "0x16c0"].includes(b.vid[0]))
+    .every((b) => !b.genericChip),
+);
+
 // ---------------------------------------------------------------------------
 // 2. Protocol config consistency (real module import)
 // ---------------------------------------------------------------------------
@@ -375,9 +435,13 @@ for (const b of samdBoards) {
   if (cfg.variant !== "samd21") problems.push(`variant=${cfg.variant}`);
   if (cfg.memory?.sketchOffset !== 0x2000)
     problems.push(`sketchOffset=0x${cfg.memory?.sketchOffset?.toString(16)}`);
-  if (!Array.isArray(cfg.bootloaderPids) || cfg.bootloaderPids.length === 0)
-    problems.push("no bootloaderPids");
-  else {
+  if (!Array.isArray(cfg.bootloaderPids)) {
+    problems.push("no bootloaderPids array");
+  } else if (cfg.bootloaderPids.length === 0) {
+    // Legal only for bridge-chip boards (e.g. Tian's CP210x) that never
+    // re-enumerate - i.e. boards without any bootloader-style pid
+    if (bootPidsJson.length > 0) problems.push("no bootloaderPids");
+  } else {
     for (const pid of cfg.bootloaderPids) {
       if (!bootPidsJson.includes(pid))
         problems.push(

@@ -797,6 +797,9 @@ let knownBoardsCatalog = [];
  *  successful uploads (persisted in arduino-requirements.txt). Populated
  *  by the learned-device tracking feature; overrides all tiers. */
 const learnedDeviceMap = new Map();
+/** @type {Set<string>} Platform ids the missing-platform notice has already
+ *  been shown for this session (repeat connects must not spam it) */
+const platformNoticeShown = new Set();
 
 // Load Boards
 async function loadBoards() {
@@ -1154,6 +1157,35 @@ if (appLoadingRetryBtn) {
 }
 
 startApp();
+
+// ---------------------------------------------------------------------------
+// Cross-tab guard: a second bridge tab holds serial port opens hostage
+// (same-origin tabs share port grants, and only one can have a port open).
+// After hard refreshes it's easy to leave an old tab running - warn early.
+// ---------------------------------------------------------------------------
+const TAB_CHANNEL = "arduino-bridge-tabs";
+if (typeof BroadcastChannel !== "undefined") {
+  const tabChannel = new BroadcastChannel(TAB_CHANNEL);
+  let duplicateTabNoticeShown = false;
+  tabChannel.addEventListener("message", (event) => {
+    if (event.data === "hello") {
+      // Another tab just started - tell it we exist
+      tabChannel.postMessage("occupied");
+    } else if (event.data === "occupied" && !duplicateTabNoticeShown) {
+      duplicateTabNoticeShown = true;
+      logger.warn("Another bridge tab is open");
+      showGuidance({
+        title: "\u26a0\ufe0f Another bridge tab is open",
+        lines: [
+          "This page is already open in another browser tab or window.",
+          'Only one tab can hold the serial port - if Connect fails with "port could not be opened", the other tab is the reason.',
+          "Close the other tab (or disconnect there) and try again here.",
+        ],
+      });
+    }
+  });
+  tabChannel.postMessage("hello");
+}
 
 // Check if selected board uses UF2 download mode (no serial upload)
 function getBoardUploadMode() {
@@ -2162,26 +2194,31 @@ connectBtn.addEventListener("click", async () => {
           // so regenerate IntelliSense for the detected board explicitly
           void updateIntellisenseForBoard(resolved.fqbn);
         } else {
-          // Board recognised but its platform core is not installed yet
+          // Board recognised but its platform core is not installed yet.
+          // Always confirm the detection in the terminal (silence here looks
+          // like broken auto-detect); dedupe only the popup per session.
           const platformId = resolved.fqbn.split(":").slice(0, 2).join(":");
           const boardName = resolved.name || resolved.fqbn;
           terminal.write(
-            `\r\nDetected ${boardName}, but its board platform (${platformId}) is not installed.\r\n`,
+            `\r\nDetected ${boardName}, but its board platform (${platformId}) is not installed - see the Board Manager tab.\r\n`,
           );
-          showGuidance({
-            title: "\ud83d\udce6 Board platform required",
-            lines: [
-              `Your ${boardName} was detected, but the "${platformId}" platform needed to compile for it is not installed.`,
-              "Open the Board Manager tab, find the board, and click Install (this can take a minute or two).",
-              "When the install finishes, select your sketch and compile again.",
-            ],
-            actionLabel: "Open Board Manager",
-            onAction: () =>
-              openViewWithSearch(
-                "boards",
-                boardName.replace(/^Arduino\s+/i, ""),
-              ),
-          });
+          if (!platformNoticeShown.has(platformId)) {
+            platformNoticeShown.add(platformId);
+            showGuidance({
+              title: "\ud83d\udce6 Board platform required",
+              lines: [
+                `Your ${boardName} was detected, but the "${platformId}" platform needed to compile for it is not installed.`,
+                "Open the Board Manager tab, find the board, and click Install (this can take a minute or two).",
+                "When the install finishes, select your sketch and compile again.",
+              ],
+              actionLabel: "Open Board Manager",
+              onAction: () =>
+                openViewWithSearch(
+                  "boards",
+                  boardName.replace(/^Arduino\s+/i, ""),
+                ),
+            });
+          }
         }
       }
     }
@@ -2213,7 +2250,24 @@ connectBtn.addEventListener("click", async () => {
     terminal.write("\r\nConnected to Serial Port\r\n");
   } catch (error) {
     logger.error("Connection failed", error);
-    terminal.write(`\r\nError: ${error.message}\r\n`);
+    if (/Failed to open serial port/i.test(error?.message || "")) {
+      // The device exists but the OS refused the open - almost always
+      // because another program holds the port, or the device just
+      // re-enumerated and this port object is stale.
+      terminal.write(
+        "\r\nError: the serial port could not be opened - it is probably in use by another program.\r\n",
+      );
+      showGuidance({
+        title: "\ud83d\udd0c Serial port could not be opened",
+        lines: [
+          "The device was found, but its port could not be opened. This almost always means another program is using it.",
+          "Close other serial tools (Thonny, the Arduino IDE, PuTTY, or another tab with this page open) and click Connect again.",
+          "If nothing else is running, unplug and replug the USB cable, then retry.",
+        ],
+      });
+    } else {
+      terminal.write(`\r\nError: ${error.message}\r\n`);
+    }
   }
 });
 

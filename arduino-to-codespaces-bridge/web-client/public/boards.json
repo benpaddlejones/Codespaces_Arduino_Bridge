@@ -1,61 +1,61 @@
 {
   "boards": [
     {
-      "name": "Arduino Uno",
-      "fqbn": "arduino:avr:uno",
+      "name": "LilyPad Arduino USB",
+      "fqbn": "arduino:avr:LilyPadUSB",
       "vid": [
-        "0x2341"
+        "0x1b4f"
       ],
       "pid": [
-        "0x0043",
-        "0x0001",
-        "0x0243"
+        "0x9207",
+        "0x9208"
       ],
       "tier": 1
     },
     {
-      "name": "Arduino Uno R4 WiFi",
-      "fqbn": "arduino:renesas_uno:unor4wifi",
+      "name": "Arduino Industrial 101",
+      "fqbn": "arduino:avr:chiwawa",
       "vid": [
-        "0x2341"
+        "0x2a03"
       ],
       "pid": [
-        "0x1002"
+        "0x0056",
+        "0x8056"
       ],
       "tier": 1
     },
     {
-      "name": "Arduino Uno R4 Minima",
-      "fqbn": "arduino:renesas_uno:minima",
+      "name": "Adafruit Circuit Playground",
+      "fqbn": "arduino:avr:circuitplay32u4cat",
       "vid": [
-        "0x2341"
+        "0x239a"
       ],
       "pid": [
-        "0x0069"
+        "0x8011"
       ],
       "tier": 1
     },
     {
-      "name": "Arduino Nano",
-      "fqbn": "arduino:avr:nano",
+      "name": "Arduino Esplora",
+      "fqbn": "arduino:avr:esplora",
       "vid": [
-        "0x0403"
+        "0x2341",
+        "0x2a03"
       ],
       "pid": [
-        "0x6001"
+        "0x003c",
+        "0x803c"
       ],
-      "tier": 2
+      "tier": 1
     },
     {
-      "name": "Arduino Mega or Mega 2560",
-      "fqbn": "arduino:avr:mega",
+      "name": "Arduino Gemma",
+      "fqbn": "arduino:avr:gemma",
       "vid": [
         "0x2341"
       ],
       "pid": [
-        "0x0042",
-        "0x0010",
-        "0x0242"
+        "0x0c9f"
       ],
       "tier": 1
     },
@@ -63,11 +63,52 @@
       "name": "Arduino Leonardo",
       "fqbn": "arduino:avr:leonardo",
       "vid": [
-        "0x2341"
+        "0x2341",
+        "0x2a03"
       ],
       "pid": [
-        "0x8036",
-        "0x0036"
+        "0x0036",
+        "0x8036"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino Leonardo ETH",
+      "fqbn": "arduino:avr:leonardoeth",
+      "vid": [
+        "0x2a03"
+      ],
+      "pid": [
+        "0x0040",
+        "0x8040"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino Mega or Mega 2560",
+      "fqbn": "arduino:avr:mega",
+      "vid": [
+        "0x2341",
+        "0x2a03"
+      ],
+      "pid": [
+        "0x0010",
+        "0x0042",
+        "0x0210",
+        "0x0242"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino Mega ADK",
+      "fqbn": "arduino:avr:megaADK",
+      "vid": [
+        "0x2341",
+        "0x2a03"
+      ],
+      "pid": [
+        "0x003f",
+        "0x0044"
       ],
       "tier": 1
     },
@@ -75,133 +116,384 @@
       "name": "Arduino Micro",
       "fqbn": "arduino:avr:micro",
       "vid": [
-        "0x2341"
+        "0x2341",
+        "0x2a03"
       ],
       "pid": [
+        "0x0037",
+        "0x0237",
         "0x8037",
-        "0x0037"
+        "0x8237"
       ],
       "tier": 1
     },
     {
-      "name": "Arduino MKR1000",
-      "fqbn": "arduino:samd:mkr1000",
+      "name": "Linino One",
+      "fqbn": "arduino:avr:one",
       "vid": [
-        "0x2341"
+        "0x2a03"
       ],
       "pid": [
-        "0x804e",
-        "0x004e",
-        "0x824e",
-        "0x024e"
+        "0x0001",
+        "0x8001"
       ],
       "tier": 1
     },
     {
-      "name": "Arduino MKR Zero",
-      "fqbn": "arduino:samd:mkrzero",
+      "name": "Arduino Robot Control",
+      "fqbn": "arduino:avr:robotControl",
       "vid": [
-        "0x2341"
+        "0x2341",
+        "0x2a03"
       ],
       "pid": [
-        "0x804f",
-        "0x004f"
+        "0x0038",
+        "0x8038"
       ],
       "tier": 1
     },
     {
-      "name": "Arduino MKR WiFi 1010",
-      "fqbn": "arduino:samd:mkrwifi1010",
+      "name": "Arduino Robot Motor",
+      "fqbn": "arduino:avr:robotMotor",
       "vid": [
-        "0x2341"
+        "0x2341",
+        "0x2a03"
       ],
       "pid": [
-        "0x8054",
-        "0x0054"
+        "0x0039",
+        "0x8039"
       ],
       "tier": 1
     },
     {
-      "name": "Arduino MKR FOX 1200",
-      "fqbn": "arduino:samd:mkrfox1200",
+      "name": "Arduino UNO",
+      "fqbn": "arduino:avr:uno",
       "vid": [
         "0x2341"
       ],
       "pid": [
-        "0x8050",
-        "0x0050"
+        "0x0001",
+        "0x0043",
+        "0x006a",
+        "0x0243"
       ],
       "tier": 1
     },
     {
-      "name": "Arduino MKR WAN 1300",
-      "fqbn": "arduino:samd:mkrwan1300",
+      "name": "Arduino UNO Mini",
+      "fqbn": "arduino:avr:unomini",
       "vid": [
         "0x2341"
       ],
       "pid": [
-        "0x8053",
-        "0x0053"
+        "0x0062"
       ],
       "tier": 1
     },
     {
-      "name": "Arduino MKR WAN 1310",
-      "fqbn": "arduino:samd:mkrwan1310",
+      "name": "Arduino UNO WiFi",
+      "fqbn": "arduino:avr:unowifi",
       "vid": [
-        "0x2341"
+        "0x2a03"
       ],
       "pid": [
-        "0x8059",
-        "0x0059"
-      ],
-      "tier": 1
-    },
-    {
-      "name": "Arduino MKR GSM 1400",
-      "fqbn": "arduino:samd:mkrgsm1400",
-      "vid": [
-        "0x2341"
-      ],
-      "pid": [
-        "0x8052",
-        "0x0052"
-      ],
-      "tier": 1
-    },
-    {
-      "name": "Arduino MKR NB 1500",
-      "fqbn": "arduino:samd:mkrnb1500",
-      "vid": [
-        "0x2341"
-      ],
-      "pid": [
-        "0x8055",
-        "0x0055"
-      ],
-      "tier": 1
-    },
-    {
-      "name": "Arduino MKR Vidor 4000",
-      "fqbn": "arduino:samd:mkrvidor4000",
-      "vid": [
-        "0x2341"
-      ],
-      "pid": [
-        "0x8056",
-        "0x0056"
-      ],
-      "tier": 1
-    },
-    {
-      "name": "Arduino Nano 33 IoT",
-      "fqbn": "arduino:samd:nano_33_iot",
-      "vid": [
-        "0x2341"
-      ],
-      "pid": [
-        "0x8057",
         "0x0057"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino Y\u00fan",
+      "fqbn": "arduino:avr:yun",
+      "vid": [
+        "0x2341",
+        "0x2a03"
+      ],
+      "pid": [
+        "0x0041",
+        "0x8041"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino Y\u00fan Mini",
+      "fqbn": "arduino:avr:yunmini",
+      "vid": [
+        "0x2a03"
+      ],
+      "pid": [
+        "0x0050",
+        "0x8050"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino Edge Control",
+      "fqbn": "arduino:mbed_edge:edge_control",
+      "vid": [
+        "0x2341"
+      ],
+      "pid": [
+        "0x005d",
+        "0x805d"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino Giga R1",
+      "fqbn": "arduino:mbed_giga:giga",
+      "vid": [
+        "0x2341"
+      ],
+      "pid": [
+        "0x0266",
+        "0x0366",
+        "0x0466"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino Nano 33 BLE",
+      "fqbn": "arduino:mbed_nano:nano33ble",
+      "vid": [
+        "0x2341"
+      ],
+      "pid": [
+        "0x005a",
+        "0x015a",
+        "0x025a",
+        "0x805a"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino Nano RP2040 Connect",
+      "fqbn": "arduino:mbed_nano:nanorp2040connect",
+      "vid": [
+        "0x2341"
+      ],
+      "pid": [
+        "0x005e",
+        "0x015e",
+        "0x025e",
+        "0x805e"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino Nicla Vision",
+      "fqbn": "arduino:mbed_nicla:nicla_vision",
+      "vid": [
+        "0x2341"
+      ],
+      "pid": [
+        "0x025f",
+        "0x035f",
+        "0x045f",
+        "0x055f"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino Nicla Voice",
+      "fqbn": "arduino:mbed_nicla:nicla_voice",
+      "vid": [
+        "0x2341"
+      ],
+      "pid": [
+        "0x0065"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Opta",
+      "fqbn": "arduino:mbed_opta:opta",
+      "vid": [
+        "0x2341",
+        "0x35d1"
+      ],
+      "pid": [
+        "0x0064",
+        "0x0164",
+        "0x0264",
+        "0x0364"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino Portenta H7",
+      "fqbn": "arduino:mbed_portenta:envie_m7",
+      "vid": [
+        "0x2341"
+      ],
+      "pid": [
+        "0x025b",
+        "0x035b",
+        "0x045b",
+        "0x055b"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Raspberry Pi Pico",
+      "fqbn": "arduino:mbed_rp2040:pico",
+      "vid": [
+        "0x2e8a"
+      ],
+      "pid": [
+        "0x00c0"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino Nano Every",
+      "fqbn": "arduino:megaavr:nona4809",
+      "vid": [
+        "0x2341"
+      ],
+      "pid": [
+        "0x0058"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino UNO WiFi Rev2",
+      "fqbn": "arduino:megaavr:uno2018",
+      "vid": [
+        "0x03eb"
+      ],
+      "pid": [
+        "0x2145"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino UNO R4 Minima",
+      "fqbn": "arduino:renesas_uno:minima",
+      "vid": [
+        "0x2341"
+      ],
+      "pid": [
+        "0x0069",
+        "0x0369"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Science Kit R3 Audio Module",
+      "fqbn": "arduino:renesas_uno:muxto",
+      "vid": [
+        "0x2341"
+      ],
+      "pid": [
+        "0x006c",
+        "0x016c"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino Nano R4",
+      "fqbn": "arduino:renesas_uno:nanor4",
+      "vid": [
+        "0x2341"
+      ],
+      "pid": [
+        "0x0074",
+        "0x0374"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino OPTA ANALOG",
+      "fqbn": "arduino:renesas_uno:opta_analog",
+      "vid": [
+        "0x2341"
+      ],
+      "pid": [
+        "0x0071",
+        "0x0171"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino OPTA DIGITAL",
+      "fqbn": "arduino:renesas_uno:opta_digital",
+      "vid": [
+        "0x2341"
+      ],
+      "pid": [
+        "0x006e",
+        "0x016e"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino Portenta C33",
+      "fqbn": "arduino:renesas_uno:portenta_c33",
+      "vid": [
+        "0x2341"
+      ],
+      "pid": [
+        "0x0068",
+        "0x0368"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino UNO R4 WiFi",
+      "fqbn": "arduino:renesas_uno:unor4wifi",
+      "vid": [
+        "0x2341"
+      ],
+      "pid": [
+        "0x006d",
+        "0x1002"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino Due (Native USB Port)",
+      "fqbn": "arduino:sam:arduino_due_x",
+      "vid": [
+        "0x2341",
+        "0x2a03"
+      ],
+      "pid": [
+        "0x003e"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino Due (Programming Port)",
+      "fqbn": "arduino:sam:arduino_due_x_dbg",
+      "vid": [
+        "0x2341",
+        "0x2a03"
+      ],
+      "pid": [
+        "0x003d"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Adafruit Circuit Playground Express",
+      "fqbn": "arduino:samd:adafruit_circuitplayground_m0",
+      "vid": [
+        "0x239a"
+      ],
+      "pid": [
+        "0x0018",
+        "0x8018"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino Zero (Programming Port)",
+      "fqbn": "arduino:samd:arduino_zero_edbg",
+      "vid": [
+        "0x03eb"
+      ],
+      "pid": [
+        "0x2157"
       ],
       "tier": 1
     },
@@ -212,12 +504,205 @@
         "0x2341"
       ],
       "pid": [
-        "0x804d",
         "0x004d",
-        "0x824d",
-        "0x024d"
+        "0x024d",
+        "0x804d",
+        "0x824d"
       ],
       "tier": 1
+    },
+    {
+      "name": "Arduino MKR 1000 WiFi",
+      "fqbn": "arduino:samd:mkr1000",
+      "vid": [
+        "0x2341"
+      ],
+      "pid": [
+        "0x004e",
+        "0x024e",
+        "0x804e",
+        "0x824e"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino MKR FOX 1200",
+      "fqbn": "arduino:samd:mkrfox1200",
+      "vid": [
+        "0x2341"
+      ],
+      "pid": [
+        "0x0050",
+        "0x8050"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino MKR GSM 1400",
+      "fqbn": "arduino:samd:mkrgsm1400",
+      "vid": [
+        "0x2341"
+      ],
+      "pid": [
+        "0x0052",
+        "0x8052"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino MKR NB 1500",
+      "fqbn": "arduino:samd:mkrnb1500",
+      "vid": [
+        "0x2341"
+      ],
+      "pid": [
+        "0x0055",
+        "0x8055"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino MKR Vidor 4000",
+      "fqbn": "arduino:samd:mkrvidor4000",
+      "vid": [
+        "0x2341"
+      ],
+      "pid": [
+        "0x0056",
+        "0x8056"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino MKR WAN 1300",
+      "fqbn": "arduino:samd:mkrwan1300",
+      "vid": [
+        "0x2341"
+      ],
+      "pid": [
+        "0x0053",
+        "0x8053"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino MKR WAN 1310",
+      "fqbn": "arduino:samd:mkrwan1310",
+      "vid": [
+        "0x2341"
+      ],
+      "pid": [
+        "0x0059",
+        "0x8059"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino MKR WiFi 1010",
+      "fqbn": "arduino:samd:mkrwifi1010",
+      "vid": [
+        "0x2341"
+      ],
+      "pid": [
+        "0x0054",
+        "0x8054"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino MKR Zero",
+      "fqbn": "arduino:samd:mkrzero",
+      "vid": [
+        "0x2341"
+      ],
+      "pid": [
+        "0x004f",
+        "0x804f"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino M0",
+      "fqbn": "arduino:samd:mzero_bl",
+      "vid": [
+        "0x2a03"
+      ],
+      "pid": [
+        "0x004e",
+        "0x804e"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino M0 Pro (Native USB Port)",
+      "fqbn": "arduino:samd:mzero_pro_bl",
+      "vid": [
+        "0x2a03"
+      ],
+      "pid": [
+        "0x004d",
+        "0x004f",
+        "0x804d",
+        "0x804f"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino M0 Pro (Programming Port)",
+      "fqbn": "arduino:samd:mzero_pro_bl_dbg",
+      "vid": [
+        "0x03eb"
+      ],
+      "pid": [
+        "0x2111"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino NANO 33 IoT",
+      "fqbn": "arduino:samd:nano_33_iot",
+      "vid": [
+        "0x2341"
+      ],
+      "pid": [
+        "0x0057",
+        "0x8057"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino Tian",
+      "fqbn": "arduino:samd:tian",
+      "vid": [
+        "0x10c4"
+      ],
+      "pid": [
+        "0xea70"
+      ],
+      "tier": 1
+    },
+    {
+      "name": "Arduino Tian (MIPS Console port)",
+      "fqbn": "arduino:samd:tian_cons",
+      "vid": [
+        "0x10c4"
+      ],
+      "pid": [
+        "0xea70"
+      ],
+      "tier": 3
+    },
+    {
+      "name": "Arduino Nano",
+      "fqbn": "arduino:avr:nano",
+      "vid": [
+        "0x0403"
+      ],
+      "pid": [
+        "0x6001"
+      ],
+      "tier": 2,
+      "genericChip": true
     },
     {
       "name": "Arduino Nano ESP32",
@@ -252,7 +737,8 @@
         "0xb534"
       ],
       "note": "ESP8266 core not installed",
-      "tier": 2
+      "tier": 2,
+      "genericChip": true
     },
     {
       "name": "LinkNode D1",
@@ -264,17 +750,6 @@
         "0x7523"
       ],
       "tier": 3
-    },
-    {
-      "name": "Arduino Nano RP2040 Connect",
-      "fqbn": "arduino:mbed_nano:nanorp2040connect",
-      "vid": [
-        "0x2341"
-      ],
-      "pid": [
-        "0x005e"
-      ],
-      "tier": 1
     },
     {
       "name": "Raspberry Pi Pico",
@@ -335,177 +810,6 @@
       "tier": 2
     },
     {
-      "name": "Arduino Y\u00fan",
-      "fqbn": "arduino:avr:yun",
-      "vid": [
-        "0x2341",
-        "0x2A03"
-      ],
-      "pid": [
-        "0x0041",
-        "0x8041"
-      ],
-      "tier": 1
-    },
-    {
-      "name": "Arduino Mega ADK",
-      "fqbn": "arduino:avr:megaADK",
-      "vid": [
-        "0x2341",
-        "0x2A03"
-      ],
-      "pid": [
-        "0x003f",
-        "0x0044"
-      ],
-      "tier": 1
-    },
-    {
-      "name": "Arduino Leonardo ETH",
-      "fqbn": "arduino:avr:leonardoeth",
-      "vid": [
-        "0x2a03"
-      ],
-      "pid": [
-        "0x0040",
-        "0x8040"
-      ],
-      "tier": 1
-    },
-    {
-      "name": "Arduino Esplora",
-      "fqbn": "arduino:avr:esplora",
-      "vid": [
-        "0x2341",
-        "0x2A03"
-      ],
-      "pid": [
-        "0x003C",
-        "0x803C"
-      ],
-      "tier": 1
-    },
-    {
-      "name": "LilyPad Arduino USB",
-      "fqbn": "arduino:avr:LilyPadUSB",
-      "vid": [
-        "0x1B4F"
-      ],
-      "pid": [
-        "0x9207",
-        "0x9208"
-      ],
-      "tier": 1
-    },
-    {
-      "name": "Arduino Robot Control",
-      "fqbn": "arduino:avr:robotControl",
-      "vid": [
-        "0x2341",
-        "0x2A03"
-      ],
-      "pid": [
-        "0x0038",
-        "0x8038"
-      ],
-      "tier": 1
-    },
-    {
-      "name": "Arduino Robot Motor",
-      "fqbn": "arduino:avr:robotMotor",
-      "vid": [
-        "0x2341",
-        "0x2A03"
-      ],
-      "pid": [
-        "0x0039",
-        "0x8039"
-      ],
-      "tier": 1
-    },
-    {
-      "name": "Arduino Gemma",
-      "fqbn": "arduino:avr:gemma",
-      "vid": [
-        "0x2341"
-      ],
-      "pid": [
-        "0x0c9f"
-      ],
-      "tier": 1
-    },
-    {
-      "name": "Adafruit Circuit Playground",
-      "fqbn": "arduino:avr:circuitplay32u4cat",
-      "vid": [
-        "0x239A"
-      ],
-      "pid": [
-        "0x8011"
-      ],
-      "tier": 1
-    },
-    {
-      "name": "Arduino Y\u00fan Mini",
-      "fqbn": "arduino:avr:yunmini",
-      "vid": [
-        "0x2a03"
-      ],
-      "pid": [
-        "0x0050",
-        "0x8050"
-      ],
-      "tier": 1
-    },
-    {
-      "name": "Arduino Industrial 101",
-      "fqbn": "arduino:avr:chiwawa",
-      "vid": [
-        "0x2a03"
-      ],
-      "pid": [
-        "0x0056",
-        "0x8056"
-      ],
-      "tier": 1
-    },
-    {
-      "name": "Linino One",
-      "fqbn": "arduino:avr:one",
-      "vid": [
-        "0x2a03"
-      ],
-      "pid": [
-        "0x0001",
-        "0x8001"
-      ],
-      "tier": 1
-    },
-    {
-      "name": "Arduino Due (Programming Port)",
-      "fqbn": "arduino:sam:arduino_due_x_dbg",
-      "vid": [
-        "0x2341",
-        "0x2A03"
-      ],
-      "pid": [
-        "0x003d"
-      ],
-      "tier": 1
-    },
-    {
-      "name": "Arduino Due (Native USB Port)",
-      "fqbn": "arduino:sam:arduino_due_x",
-      "vid": [
-        "0x2341",
-        "0x2A03"
-      ],
-      "pid": [
-        "0x003e"
-      ],
-      "tier": 1
-    },
-    {
       "name": "Arduino Uno compatible (CH340)",
       "fqbn": "arduino:avr:uno",
       "vid": [
@@ -514,7 +818,8 @@
       "pid": [
         "0x7523"
       ],
-      "tier": 2
+      "tier": 2,
+      "genericChip": true
     },
     {
       "name": "ESP32 Dev Module (CP210x)",
@@ -525,7 +830,8 @@
       "pid": [
         "0xea60"
       ],
-      "tier": 2
+      "tier": 2,
+      "genericChip": true
     },
     {
       "name": "ESP32 Dev Module (CH9102)",
@@ -536,7 +842,8 @@
       "pid": [
         "0x55d4"
       ],
-      "tier": 2
+      "tier": 2,
+      "genericChip": true
     }
   ]
 }

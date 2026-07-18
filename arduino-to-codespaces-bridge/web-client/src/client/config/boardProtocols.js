@@ -360,6 +360,18 @@ export const BOARD_PROTOCOL_MAP = {
   "arduino:samd:mkrvidor4000": makeSamd21Config([0x0056]),
   "arduino:samd:nano_33_iot": makeSamd21Config([0x0057]),
   "arduino:samd:arduino_zero_native": makeSamd21Config([0x004d, 0x024d]),
+  // Remaining official SAMD21 entries (authoritative boards.txt rebuild).
+  // The _dbg/EDBG/console ports are programmed via a debugger, not SAM-BA -
+  // configs exist so behaviour is defined, using each board's listed ids.
+  "arduino:samd:adafruit_circuitplayground_m0": makeSamd21Config([0x0018]),
+  "arduino:samd:arduino_zero_edbg": makeSamd21Config([0x2157]),
+  "arduino:samd:mzero_bl": makeSamd21Config([0x004e]),
+  "arduino:samd:mzero_pro_bl": makeSamd21Config([0x004d, 0x004f]),
+  "arduino:samd:mzero_pro_bl_dbg": makeSamd21Config([0x2111]),
+  // Tian talks through a CP210x bridge - the port never re-enumerates into
+  // a bootloader device, so there are no bootloader PIDs to detect
+  "arduino:samd:tian": makeSamd21Config([]),
+  "arduino:samd:tian_cons": makeSamd21Config([]),
 
   // mbed boards - BOSSA variant
   "arduino:mbed_nano:nano33ble": BOSSA_NRF52_CONFIG,
