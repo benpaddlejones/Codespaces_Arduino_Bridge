@@ -2,8 +2,8 @@
   "additionalFiles": "",
   "compiler.optimization_flags": "-Os",
   "customBuildProperties": "",
-  "fqbn": "arduino:samd:mzero_bl",
-  "hardwareFolders": "/home/node/.arduino15/packages/arduino/hardware/samd/1.8.14,/home/node/.arduino15/packages/arduino/hardware/samd/1.8.14",
+  "fqbn": "arduino:renesas_uno:nanor4",
+  "hardwareFolders": "/home/node/.arduino15/packages/arduino/hardware/renesas_uno/1.6.0,/home/node/.arduino15/packages/arduino/hardware/renesas_uno/1.6.0",
   "otherLibrariesFolders": "/home/node/Arduino/libraries",
   "sketchLocation": "/workspaces/Codespaces_Arduino_Bridge/demo_upload_validation"
 }

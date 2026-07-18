@@ -1298,10 +1298,7 @@ export class DFUStrategy {
           if (blockNum % 20 === 0) {
             const percent = Math.floor(10 + (bytesSent / firmware.length) * 80);
             if (onProgress) {
-              onProgress(
-                percent,
-                `Flashing: ${Math.floor((bytesSent / firmware.length) * 100)}%`,
-              );
+              onProgress(percent, "Flashing");
             }
           }
         } catch (error) {

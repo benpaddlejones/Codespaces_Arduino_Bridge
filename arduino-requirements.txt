@@ -14,4 +14,7 @@ library Servo 1.3.0
 
 # Devices (learned from successful uploads)
 device 0x10c4:0xea60 arduino:avr:uno
+device 0x2341:0x0043 arduino:avr:uno
+device 0x2341:0x0069 arduino:renesas_uno:minima
+device 0x2341:0x0074 arduino:renesas_uno:nanor4
 device 0x2341:0x8054 arduino:samd:mkrwifi1010

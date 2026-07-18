@@ -68,12 +68,15 @@ export class UploadReporter {
   }
 
   /**
-   * Update the single self-overwriting progress line.
+   * Update the single self-overwriting progress line. The line is fully
+   * erased (ANSI \x1b[2K) before each rewrite - a bare \r left stale
+   * characters behind whenever the new text was shorter than the old one
+   * (e.g. "Finalizing...: 100%   ode...: 0%").
    * @param {number} percent - 0-100
    * @param {string} [note] - Short status, e.g. "Chunk 3/22"
    */
   progress(percent, note) {
-    this.write(`\r${note ? `${note}: ` : ""}${percent}%   `);
+    this.write(`\r\x1b[2K${note ? `${note}: ` : ""}${percent}%`);
   }
 
   /**

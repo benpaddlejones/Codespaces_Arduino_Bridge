@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Same-day debugging iterations are grouped into their release milestone.
 
+## [1.2.58] - 2026-07-18
+
+### Fixed
+
+- DFU uploads showed two percentages on the progress line
+  (`Flashing: 29%: 33%`): the DFU strategy embedded its own raw write
+  percentage inside the status note while the reporter appends the overall
+  upload percentage. The note is now plain `Flashing` and only the overall
+  percentage is shown. Added a test tripwire so no strategy can reintroduce
+  a percentage inside a progress note.
+
+## [1.2.57] - 2026-07-18
+
+### Fixed
+
+- Garbled upload progress line (e.g. `Finalizing...: 100%   ode...: 0%`):
+  the self-overwriting progress line only returned the cursor with `\r`
+  without erasing, so when the new status was shorter than the previous
+  one, leftover characters remained visible. The line is now fully erased
+  (ANSI clear-line) before each rewrite.
+
 ## [1.2.56] - 2026-07-18
 
 ### Fixed

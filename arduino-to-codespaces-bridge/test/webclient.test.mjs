@@ -801,15 +801,21 @@ ok(
   r.phase("compile", "Compiling again\u2026"); // repeat - must not duplicate
   r.phase("write", "Flashing\u2026");
   r.phase("prepare", "Backwards\u2026"); // regression - must be ignored
-  r.progress(50, "Chunk 1/2");
+  r.progress(50, "Long chunk label 1/2");
+  r.progress(0, "Finalizing");
   r.success();
   r.success(); // second summary must be suppressed
   const compileLines = (out.match(/Compiling/g) || []).length;
   ok("phase lines never repeat", compileLines === 1);
   ok("phases never go backwards", !out.includes("Backwards"));
   ok(
-    "progress renders as a self-overwriting line",
-    out.includes("\rChunk 1/2: 50%"),
+    "progress erases the whole line before each rewrite (no stale chars)",
+    out.includes("\r\x1b[2KLong chunk label 1/2: 50%") &&
+      out.includes("\r\x1b[2KFinalizing: 0%"),
+  );
+  ok(
+    "progress updates overwrite one line (no newline between updates)",
+    out.includes("Long chunk label 1/2: 50%\r\x1b[2KFinalizing: 0%"),
   );
   const summaries = (out.match(/\u2705/g) || []).length;
   ok("exactly one success summary", summaries === 1);
@@ -841,6 +847,20 @@ ok(
   "UploadLogger writes to the console only (never terminal.write)",
   !uploadLoggerSrc.includes("terminal.write"),
 );
+// The reporter renders "note: percent%" - a note that embeds its own
+// percentage produces double percentages ("Flashing: 29%: 33%", DFU 1.2.58)
+{
+  const offenders = collectJsFiles(path.join(CLIENT_SRC, "services")).filter(
+    (file) =>
+      /(onProgress|progressCallback)\s*\([\s\S]{0,120}?%`/.test(
+        fs.readFileSync(file, "utf8"),
+      ),
+  );
+  ok(
+    `no progress note embeds its own percentage${offenders.length ? ` (${offenders.map(rel).join(", ")})` : ""}`,
+    offenders.length === 0,
+  );
+}
 ok(
   "upload flows route through the shared UploadReporter",
   /uploadReporter\.start\(/.test(mainSrc) &&
