@@ -3,3 +3,4 @@
 - update README.md
 - purchase more hardware for testing
 - confirm devices that need a serial starter, will these devices always need serial begin even if no serial used in sketch? if yes validate
+- Make REPL upload less verbose and consistent. verbose details to. rowser console for debug purposes. Create a upload reporter module so always consistent.
