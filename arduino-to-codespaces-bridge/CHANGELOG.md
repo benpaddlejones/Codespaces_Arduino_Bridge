@@ -6,190 +6,137 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Same-day debugging iterations are grouped into their release milestone.
 
-## [1.2.58] - 2026-07-18
+## [2.0.0] - 2026-07-18
+
+**Major release** — consolidates the 1.2.x series into the first release
+recommended for classroom-scale use. Highlights since 1.1.x:
+
+- Verified in-browser upload protocols across the official board families:
+  SAMD/MKR (SAM-BA, verified against the official bootloader source),
+  UNO R4 family incl. Nano R4 (WebUSB DFU with 1200bps-touch), Nano 33 BLE
+  (nRF52 BOSSA), AVR (STK500) and ESP32 — plus Teensy, Pico and clone-chip
+  guidance surfaces.
+- Board auto-detection rebuilt on an authoritative catalog generated from
+  the official Arduino cores (56 tier-1 boards, every official VID/PID),
+  with three-tier identification and per-repo learned device mappings in
+  arduino-requirements.txt.
+- Clean upload reporting: fixed phases, one live progress line, single
+  success/failure summary; full protocol trace in the browser console.
+- Reliability hardening: startup gate, Codespaces tunnel resilience,
+  serial-port open retry/teardown/cross-tab guards, environment sync that
+  verifies installed state before installing.
+- Security hardening (CSRF, CORS, argument/path-injection guards, loopback
+  bind) and a 103-assertion static test suite (`npm run test:all`).
+
+## [1.2.56 - 1.2.58] - 2026-07-18
+
+**Startup & upload-output fixes.**
 
 ### Fixed
 
-- DFU uploads showed two percentages on the progress line
-  (`Flashing: 29%: 33%`): the DFU strategy embedded its own raw write
-  percentage inside the status note while the reporter appends the overall
-  upload percentage. The note is now plain `Flashing` and only the overall
-  percentage is shown. Added a test tripwire so no strategy can reintroduce
-  a percentage inside a progress note.
+- "Loading boards and sketches…" could hang for minutes at startup: a
+  transiently failed installed-state query was treated as "nothing
+  installed", so every platform and library from arduino-requirements.txt
+  was reinstalled — monopolising arduino-cli and blocking the boards and
+  sketches APIs the startup gate waits on. Installed state is now verified
+  first; a failed check skips the sync pass (retried on the next trigger)
+  instead of reinstalling, and can no longer wipe arduino-requirements.txt
+  by writing empty platform/library lists (1.2.56).
+- Garbled upload progress line (`Finalizing...: 100%   ode...: 0%`): the
+  self-overwriting progress line is now fully erased before each rewrite
+  instead of leaving stale characters behind when the new status is
+  shorter than the previous one (1.2.57).
+- DFU uploads showed two percentages (`Flashing: 29%: 33%`): the DFU
+  strategy embedded its own raw write percentage inside the status note
+  while the reporter appends the overall upload percentage. Notes are now
+  plain labels; a test tripwire keeps percentages out of progress notes
+  (1.2.58).
 
-## [1.2.57] - 2026-07-18
+## [1.2.50 - 1.2.55] - 2026-07-18
 
-### Fixed
-
-- Garbled upload progress line (e.g. `Finalizing...: 100%   ode...: 0%`):
-  the self-overwriting progress line only returned the cursor with `\r`
-  without erasing, so when the new status was shorter than the previous
-  one, leftover characters remained visible. The line is now fully erased
-  (ANSI clear-line) before each rewrite.
-
-## [1.2.56] - 2026-07-18
-
-### Fixed
-
-- "Loading boards and sketches…" could hang for minutes at startup: when
-  the environment sync's installed-state query failed transiently, the
-  failure was treated as "nothing installed", so EVERY platform and library
-  from arduino-requirements.txt was reinstalled - blocking arduino-cli (and
-  with it the boards/sketches APIs the startup gate waits on). Installed
-  state is now verified first and a failed check skips the sync (retried on
-  the next trigger) instead of reinstalling.
-- Same root cause could silently WIPE arduino-requirements.txt: writing the
-  config after a failed installed-state query produced empty platform and
-  library lists. The file is now left untouched unless the state was
-  verified.
-
-## [1.2.55] - 2026-07-18
-
-### Fixed
-
-- "Serial port could not be opened" appeared even with NO other programs
-  running: the page itself was the culprit. When this page already held an
-  open session (background auto-reconnect, an earlier connect, or a UI
-  desync), clicking Connect tried a bare close() on the port - which fails
-  with "Cannot cancel a locked stream" while the read loop holds the reader
-  lock - so the reopen failed and the error was misattributed to other
-  software. Connect now fully tears down our own session first (stop read
-  loop, cancel reader, close writer, close port) before reopening.
-
-## [1.2.54] - 2026-07-18
+**Field-reliability milestone** — authoritative board catalog and
+serial-port robustness, driven by Nano R4 and Raspberry Pi Pico field
+reports.
 
 ### Fixed
 
 - Board auto-detection catalog rebuilt AUTHORITATIVELY from the official
-  Arduino cores' boards.txt on github.com/arduino (avr, megaavr, samd, sam,
-  renesas, mbed) instead of piecemeal hand maintenance. 56 tier-1 boards
-  generated with every official VID/PID (both classic vid.N/pid.N and
+  Arduino cores' boards.txt on github.com/arduino (avr, megaavr, samd,
+  sam, renesas, mbed) instead of piecemeal hand maintenance: 56 tier-1
+  boards with every official VID/PID (both classic vid.N/pid.N and
   pluggable-discovery upload_port formats parsed). Previously missing and
   now detected: **Nano R4** (the reported bug), Nano Every, Uno WiFi Rev2,
-  Uno Mini, Uno with 0x006a/0x0210/0x0237 ids, Giga R1, Nicla family, Opta
-  variants, Portenta H7/C33, Edge Control, M0/M0 Pro, Tian, Due, Circuit
-  Playground Express, and all bootloader-mode ids across the range.
-  Official data conflicts resolved per the tier rules (M0/M0 Pro shared
-  pairs, Tian's twin console port demoted to tier 3). Curated tier-2/3
-  clone-chip entries preserved; the rebuild script is idempotent.
-- Protocol configs added for the newly catalogued SAMD boards (Circuit
-  Playground Express, M0/M0 Pro, Zero EDBG, Tian).
+  Uno Mini, Giga R1, the Nicla/Opta/Portenta families, Edge Control,
+  M0/M0 Pro, Tian, Due, Circuit Playground Express, and all
+  bootloader-mode ids across the range. Official data conflicts resolved
+  per the tier rules; curated tier-2/3 clone-chip entries preserved; the
+  rebuild script is idempotent. Protocol configs added for the newly
+  catalogued SAMD boards (1.2.54).
+- "Serial port could not be opened" appeared even with NO other programs
+  running: the page itself was holding the port (background
+  auto-reconnect, an earlier connect, or a UI desync) — a bare close()
+  fails with "Cannot cancel a locked stream" while the read loop holds the
+  reader lock, and the failure was misattributed to other software.
+  Connect now fully tears down our own session (stop read loop, cancel
+  reader, close writer, close port) before reopening (1.2.55).
+- Persistent "Failed to open serial port" on Connect: the open now retries
+  with backoff (Windows releases the COM handle a moment AFTER close()
+  resolves, and just-re-enumerated devices briefly refuse opens); if the
+  device re-enumerated, the retry adopts the fresh granted port with the
+  same USB identity. New cross-tab guard warns when a second bridge tab is
+  already holding the port — the most common cause of repeated open
+  failures after hard refreshes (1.2.52).
+- Board detection could look broken for boards whose platform is not
+  installed (e.g. a MicroPython Pico): the popup anti-spam change had also
+  silenced the terminal detection line on repeat connects. The "Detected
+  X, but its platform is not installed" line now always prints (with a
+  Board Manager pointer); only the popup is deduped per session, and
+  open failures produce an actionable guidance dialog (1.2.51, 1.2.53).
+- Mismatch warning missed vendor-identified non-Arduino devices (a Pico
+  uploaded silently while "Arduino M0" was selected): vendor-specific ids
+  (Raspberry Pi 0x2E8A, PJRC 0x16C0) now count as positive identification
+  and raise the mismatch dialog, while generic USB-UART bridge chips
+  (CH340/CP210x/FTDI/Holtek) still never warn (1.2.50).
 
-## [1.2.53] - 2026-07-18
+## [1.2.46 - 1.2.49] - 2026-07-18
 
-### Fixed
+**Board identification & upload-experience milestone.**
 
-- Connecting a detected board whose platform is not installed looked like
-  broken auto-detection: the 1.2.51 anti-spam change suppressed the
-  terminal line together with the popup on repeat connects, so the second
-  and later connects in a session were completely silent. The "Detected X,
-  but its platform is not installed" line now always prints (with a Board
-  Manager pointer); only the popup is deduped per session.
+### Added
 
-## [1.2.52] - 2026-07-18
-
-### Fixed
-
-- Persistent "Failed to open serial port" on Connect:
-  - The Connect open now retries up to 4 times with backoff. Windows
-    releases the COM handle a moment AFTER close() resolves (whether closed
-    by us or another program), and a just-re-enumerated device briefly
-    refuses opens - a single attempt failed in both cases. If the device
-    re-enumerated, the retry adopts the fresh granted port with the same
-    USB identity instead of reusing the dead port object.
-  - New cross-tab guard: bridge tabs announce themselves over a
-    BroadcastChannel, and opening the page while another tab is running
-    shows a clear warning - a second same-origin tab holding the port is
-    the most common cause of repeated open failures after hard refreshes.
-
-## [1.2.51] - 2026-07-18
-
-### Fixed
-
-- Connecting a board whose platform is not installed (e.g. a Raspberry Pi
-  Pico running MicroPython) no longer spams the "platform required" popup
-  and terminal line on every connect/reconnect attempt - the notice now
-  shows once per platform per session.
-- "Failed to open serial port" now produces an actionable message and
-  guidance dialog: the port is almost always held by another program
-  (Thonny, Arduino IDE, PuTTY, a second tab) or the device just
-  re-enumerated - close the other tool or replug, then retry.
-
-## [1.2.50] - 2026-07-18
-
-### Fixed
-
-- Mismatch warning missed vendor-identified non-Arduino devices: a
-  Raspberry Pi Pico connected while "Arduino M0" was selected uploaded
-  silently. Tier-2 catalog entries are now split by a genericChip flag:
-  USB-UART bridge chips (CH340/CP210x/FTDI/Holtek) still never warn (chip
-  id ≠ board id), but vendor-specific ids (Raspberry Pi 0x2E8A, PJRC
-  0x16C0) count as positive identification - selecting an unrelated board
-  for them now raises the mismatch dialog, while tier-3 alternates for the
-  same chip (e.g. Pico W) stay silent. 5 new test assertions.
-
-## [1.2.49] - 2026-07-18
-
-### Changed
-
-- Marketplace README rewritten for clarity: grouped feature overview
-  (compile & upload protocols, board auto-detection with learned devices,
-  full web-UI tab tour, reliability features), corrected requirements
-  (arduino-cli is BUNDLED - no install needed), refreshed usage flow,
-  supported-boards table including the SAMD/MKR family and Nano 33 BLE,
-  and environment documentation for arduino-requirements.txt including the
-  learned `device` lines. Project root README now documents the overall
-  architecture with a marketplace link.
-
-## [1.2.48] - 2026-07-18
+- Three-tier board identification (boards.json `tier` field): tier 1 =
+  official Arduino VID:PIDs (auto-picker tries first); tier 2 = probable
+  non-Arduino devices, exactly one board per VID:PID (fallback): Uno
+  compatible (CH340), Nano (FTDI), ESP32 Dev Module (CP210x / CH9102),
+  Wemos D1 mini, Raspberry Pi Pico, Teensy 4.1; tier 3 = boards sharing an
+  already-used chip (never auto-selected; only suppress mismatch
+  warnings): Pico W, Teensy 4.0, NodeMCU, D1. A new pure boardResolver
+  module implements the policy: learned mapping → tier 1 → tier 2
+  (1.2.46).
+- Learned-device tracking: a successful upload records the connected
+  VID:PID → board mapping as a `device 0xVVVV:0xPPPP <fqbn>` line in
+  arduino-requirements.txt (committed — mappings follow the repo across
+  Codespace rebuilds and forks). One entry per VID:PID, latest successful
+  upload wins; on connect a learned mapping overrides the tier catalog and
+  suppresses mismatch warnings for that pair. New GET/POST
+  /api/devices/learned endpoints on both servers, seeded and persisted
+  through the environment sync's single-writer path (1.2.47).
 
 ### Changed
 
 - Upload output rewritten around a single UploadReporter module: the
-  terminal now shows only fixed phases (compile -> prepare -> erase ->
-  write -> verify -> reset -> reconnect) with one self-overwriting progress
-  line and a single success/failure summary - identical across
-  BOSSA/DFU/AVR/ESP boards. The full protocol trace (CMD/RSP/timing) now
-  lives in the browser console only: the console-to-terminal mirror that
-  flooded the terminal with every log line is removed, and failure
-  summaries point to the console (F12) for diagnosis. All upload paths
-  (compile & upload, bootloader chooser, I2C scanner) route through the
-  reporter. 9 new test assertions drive the reporter under Node and
-  tripwire the console-only rule.
-
-## [1.2.47] - 2026-07-18
-
-### Added
-
-- Learned-device tracking: a successful upload records the connected
-  VID:PID -> board mapping as a `device 0xVVVV:0xPPPP <fqbn>` line in
-  arduino-requirements.txt (committed - mappings follow the repo across
-  Codespace rebuilds and forks). One entry per VID:PID, latest successful
-  upload wins. On connect, a learned mapping overrides the tier catalog:
-  the board is auto-selected and mismatch warnings are suppressed for that
-  pair. New GET/POST /api/devices/learned endpoints on both servers; the
-  extension's environment sync seeds the server from the file and persists
-  runtime learns back through the existing single-writer path. 10 new test
-  assertions cover the request contract, both success paths, the file
-  format parser/serializer agreement, and the sync lifecycle.
-
-## [1.2.46] - 2026-07-18
-
-### Added
-
-- Three-tier board identification (boards.json `tier` field):
-  - Tier 1 = official Arduino VID:PIDs (auto-picker tries first).
-  - Tier 2 = probable non-Arduino devices, exactly one board per VID:PID
-    (auto-picker fallback): Uno compatible (CH340), Nano (FTDI), ESP32 Dev
-    Module (CP210x / CH9102), Wemos D1 mini, Raspberry Pi Pico, Teensy 4.1.
-  - Tier 3 = boards sharing an already-used chip (never auto-selected;
-    only suppress mismatch warnings): Pico W, Teensy 4.0, NodeMCU, D1.
-  - New pure boardResolver module implements the policy: learned mapping
-    (future) -> tier 1 -> tier 2; mismatch warnings now fire ONLY when the
-    device positively identifies as a different official board, replacing
-    the ad-hoc bridge-chip VID allowlist.
-  - 13 new test assertions: tier schema, VID:PID uniqueness across tiers
-    1+2, tier-3 duplicates rule, and resolver/mismatch policy unit tests.
+  terminal shows only fixed phases (compile → prepare → erase → write →
+  verify → reset → reconnect) with one self-overwriting progress line and
+  a single success/failure summary — identical across BOSSA/DFU/AVR/ESP
+  boards. The full protocol trace (CMD/RSP/timing) lives in the browser
+  console only; the console-to-terminal mirror that flooded the terminal
+  is removed, and failure summaries point to the console (F12) (1.2.48).
+- Marketplace README rewritten for clarity: grouped feature overview,
+  corrected requirements (arduino-cli is BUNDLED — no install needed),
+  refreshed usage flow, supported-boards table, and environment
+  documentation for arduino-requirements.txt including the learned
+  `device` lines. Project root README now documents the overall
+  architecture with a marketplace link (1.2.49).
 
 ## [1.2.45] - 2026-07-17
 
@@ -397,12 +344,3 @@ Merges the previously-unpublished source of the 1.1.x marketplace releases
   Plotter (Chart.js), Board & Library Managers, VS Code commands and tree
   views, auto-start server, status bar. Supported boards: Uno, Nano, Mega,
   Leonardo, Uno R4 WiFi; experimental ESP32.
-
-## [Unreleased]
-
-### Planned
-
-- Upload from extension (without opening browser)
-- Debug support via `arduino-cli debug`
-- Multiple workspace support
-- Settings sync

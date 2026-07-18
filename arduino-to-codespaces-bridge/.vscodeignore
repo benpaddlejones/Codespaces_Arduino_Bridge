@@ -18,3 +18,9 @@ esbuild.js
 webpack.config.js
 **/*.md
 !README.md
+!CHANGELOG.md
+mbed.txt
+megaavr.txt
+renesas.txt
+sam.txt
+samd.txt

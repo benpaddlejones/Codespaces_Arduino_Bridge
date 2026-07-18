@@ -75,15 +75,20 @@ ok(
 section("2. Literal locations reference the canonical version");
 
 // CHANGELOG must document this version, and it must be the newest entry.
+// Same-day iterations may be grouped as "## [a.b.c - x.y.z]" - the current
+// version must then be the END of the newest range.
 const changelog = read("CHANGELOG.md");
+const V = VERSION.replace(/\./g, "\\.");
 ok(
-  `CHANGELOG.md has a "## [${VERSION}]" section`,
-  new RegExp(`^##\\s*\\[${VERSION.replace(/\./g, "\\.")}\\]`, "m").test(
+  `CHANGELOG.md has a "## [${VERSION}]" (or grouped "## [... - ${VERSION}]") section`,
+  new RegExp(`^##\\s*\\[(\\d+\\.\\d+\\.\\d+\\s*-\\s*)?${V}\\]`, "m").test(
     changelog,
   ),
   "add a changelog entry for the new version",
 );
-const firstChangelogVersion = changelog.match(/^##\s*\[(\d+\.\d+\.\d+)\]/m);
+const firstChangelogVersion = changelog.match(
+  /^##\s*\[(?:\d+\.\d+\.\d+\s*-\s*)?(\d+\.\d+\.\d+)\]/m,
+);
 ok(
   `newest CHANGELOG entry is ${VERSION}`,
   firstChangelogVersion && firstChangelogVersion[1] === VERSION,
