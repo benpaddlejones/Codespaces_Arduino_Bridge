@@ -1,0 +1,5 @@
+- Align Pid id's to Arduino
+- Once device set, remains set for that PID in repo no warnings
+- update README.md
+- purchase more hardware for testing
+- confirm devices that need a serial starter, will these devices always need serial begin even if no serial used in sketch? if yes validate
