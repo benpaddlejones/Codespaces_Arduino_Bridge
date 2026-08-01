@@ -32,9 +32,11 @@ export default defineConfig({
   build: {
     outDir: "dist",
     rollupOptions: {
+      // Only the app ships. The protocol-test page is a dev-only manual
+      // harness (served by `vite dev`); keep it out of the production build so
+      // no test artifacts land in the packaged extension.
       input: {
         main: "index.html",
-        test: "tests/protocol-test.html",
       },
     },
   },

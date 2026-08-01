@@ -21,6 +21,12 @@ computers where only a Chromium browser is available.
 - **UF2/hex download mode** for boards without a browser-flashable
   bootloader (Pico, Teensy): compile in the Codespace, download the
   firmware file, flash with the board's own loader
+- **Clear compile-error feedback** - a failed build ends with a boxed
+  diagnosis naming the real problem (missing semicolon, undeclared
+  identifier, missing library, overflow, etc.) with the file, line and
+  column and a plain-language fix, instead of the compiler's `exit status 1`.
+  Sketches with several mistakes list every problem, and errors inside an
+  included `.h`/`.cpp` are attributed to that file, not the main `.ino`
 
 **Board handling**
 

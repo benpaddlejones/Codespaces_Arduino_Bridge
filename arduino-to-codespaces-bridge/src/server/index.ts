@@ -40,6 +40,10 @@ import { EventEmitter } from "events";
 import express, { Application, Request, Response, NextFunction } from "express";
 import { spawn, ChildProcess, exec } from "child_process";
 import { buildIntelliSenseConfig } from "../config/intellisenseConfig";
+import {
+  analyzeCompileError,
+  analyzeCompileErrors,
+} from "./compileErrorAnalyzer";
 
 // =============================================================================
 // Types
@@ -952,7 +956,20 @@ export class BridgeServer extends EventEmitter {
           ? []
           : await this.detectMissingIncludes(log);
 
-        res.json({ ...result, log, artifact, missingIncludes });
+        // On failure, distil the log into a single clear diagnosis so the
+        // final console line explains the real problem, not `exit status 1`.
+        const diagnosis = result.success ? null : analyzeCompileError(log);
+        // ...and the full list so a sketch with several mistakes shows them all.
+        const diagnostics = result.success ? [] : analyzeCompileErrors(log);
+
+        res.json({
+          ...result,
+          log,
+          artifact,
+          missingIncludes,
+          diagnosis,
+          diagnostics,
+        });
       } catch (error: any) {
         res.status(500).json({ success: false, error: error.message });
       }

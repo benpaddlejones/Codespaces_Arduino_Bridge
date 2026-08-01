@@ -1313,6 +1313,55 @@ boardSelect.addEventListener("change", async () => {
 });
 
 // Compile Function
+/**
+ * Print a compile-error diagnosis as a boxed terminal block so the final
+ * output clearly identifies the real problem instead of the compiler's
+ * generic "exit status 1" line. When several problems were found, each is
+ * listed and numbered so students can fix them all.
+ * @param {{title:string, file?:string, line?:number, column?:number,
+ *   explanation:string, suggestion:string}} diagnosis - Primary diagnosis.
+ * @param {Array<object>} [all] - Full list of diagnoses, when more than one.
+ */
+function writeDiagnosisBlock(diagnosis, all) {
+  const rule = "\u2500".repeat(60);
+  const list = Array.isArray(all) && all.length > 1 ? all : null;
+  terminal.write(`\r\n${rule}\r\n`);
+
+  if (list) {
+    terminal.write(
+      `\u274c COMPILATION FAILED \u2014 ${list.length} problems found\r\n`,
+    );
+    list.forEach((item, idx) => {
+      const loc =
+        item.file && item.line
+          ? ` (${item.file}:${item.line}${item.column ? `:${item.column}` : ""})`
+          : "";
+      terminal.write(`\r\n${idx + 1}. ${item.title}${loc}\r\n`);
+      if (item.explanation) terminal.write(`   ${item.explanation}\r\n`);
+      if (item.suggestion) {
+        terminal.write(`   \ud83d\udc49 ${item.suggestion}\r\n`);
+      }
+    });
+    terminal.write(`${rule}\r\n`);
+    return;
+  }
+
+  terminal.write(`\u274c COMPILATION FAILED \u2014 ${diagnosis.title}\r\n`);
+  if (diagnosis.file && diagnosis.line) {
+    const col = diagnosis.column ? `, column ${diagnosis.column}` : "";
+    terminal.write(
+      `   Location: ${diagnosis.file}, line ${diagnosis.line}${col}\r\n`,
+    );
+  }
+  if (diagnosis.explanation) {
+    terminal.write(`   ${diagnosis.explanation}\r\n`);
+  }
+  if (diagnosis.suggestion) {
+    terminal.write(`   \ud83d\udc49 ${diagnosis.suggestion}\r\n`);
+  }
+  terminal.write(`${rule}\r\n`);
+}
+
 async function compileSketch(sketchPathOverride = null) {
   // Defensive guards: recovered 1.1.x fix for compile attempts firing
   // before the DOM (or a selection) is ready
@@ -1434,7 +1483,13 @@ async function compileSketch(sketchPathOverride = null) {
       terminal.write("Compilation Success!\r\n");
       return data.artifact.url;
     } else {
-      terminal.write("Compilation Failed.\r\n");
+      // Prefer the structured diagnosis (clear final line identifying the real
+      // problem) over the bare "exit status 1" the compiler ends with.
+      if (data.diagnosis) {
+        writeDiagnosisBlock(data.diagnosis, data.diagnostics);
+      } else {
+        terminal.write("Compilation Failed.\r\n");
+      }
       return null;
     }
   } catch (error) {

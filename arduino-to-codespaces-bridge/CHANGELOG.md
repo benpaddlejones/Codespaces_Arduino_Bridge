@@ -8,12 +8,29 @@ Same-day debugging iterations are grouped into their release milestone.
 
 ## [2.0.2] - 2026-08-01
 
+### Added
+
+- **Clear compile-error feedback** - a failed build now ends with a boxed
+  diagnosis that names the real problem instead of the compiler's generic
+  `exit status 1`. Common beginner mistakes (missing semicolon, undeclared
+  identifier, unmatched brace, missing library/header, redefinition, array
+  too large, flash/RAM overflow, missing `setup()`/`loop()`) are identified
+  with the offending file, line and column plus a plain-language fix.
+- Sketches with several independent mistakes now list **every** problem, and
+  errors inside an included `.h`/`.cpp` are attributed to that file rather
+  than the main `.ino`.
+
 ### Changed
 
 - Error Lens (`usernamehw.errorlens`) is now included as an optional
   companion via `extensionPack`: it is installed alongside this extension,
   but users can uninstall Error Lens if they do not want it.
 - Development container setup no longer force-installs Error Lens.
+
+### Internal
+
+- Development-only test artifacts (the compile-error fixture sketches and the
+  web-client protocol-test page) are excluded from the packaged extension.
 
 ## [2.0.1] - 2026-07-18
 

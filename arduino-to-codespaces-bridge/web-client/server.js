@@ -26,6 +26,10 @@ import { checkCliAvailable } from "./src/server/cli-executor.js";
 import * as coreManager from "./src/server/core-manager.js";
 import * as libraryManager from "./src/server/library-manager.js";
 import {
+  analyzeCompileError,
+  analyzeCompileErrors,
+} from "./src/server/compile-analyzer.js";
+import {
   startHealthMonitor,
   getLastHealthCheck,
   getHealthHistory,
@@ -1489,6 +1493,8 @@ async function prepareCompile(relativePath, fqbn) {
       error: "Compile failed",
       log: compileLog,
       missingIncludes,
+      diagnosis: analyzeCompileError(compileLog),
+      diagnostics: analyzeCompileErrors(compileLog),
     };
 
   let artifactPath;
