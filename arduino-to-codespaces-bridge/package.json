@@ -2,7 +2,7 @@
   "name": "arduino-to-codespaces-bridge",
   "displayName": "Arduino to Codespaces Bridge",
   "description": "Compile and upload Arduino sketches from GitHub Codespaces to physical boards via Web Serial",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "publisher": "benpaddlejones",
   "license": "MIT",
   "icon": "resources/icons/icon.png",
@@ -16,6 +16,9 @@
   "extensionDependencies": [
     "ms-vscode.cpptools",
     "xaver.clang-format"
+  ],
+  "extensionPack": [
+    "usernamehw.errorlens"
   ],
   "categories": [
     "Programming Languages",

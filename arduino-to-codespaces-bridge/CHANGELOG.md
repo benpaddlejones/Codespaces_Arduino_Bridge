@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Same-day debugging iterations are grouped into their release milestone.
 
+## [2.0.2] - 2026-08-01
+
+### Changed
+
+- Error Lens (`usernamehw.errorlens`) is now included as an optional
+  companion via `extensionPack`: it is installed alongside this extension,
+  but users can uninstall Error Lens if they do not want it.
+- Development container setup no longer force-installs Error Lens.
+
 ## [2.0.1] - 2026-07-18
 
 ### Fixed
