@@ -203,6 +203,13 @@ select {
   margin: 0 10px;
 }
 
+.serial-rate {
+  color: #9e9e9e;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  min-width: 62px;
+}
+
 /* Checkbox label styling for toolbar */
 .checkbox-label {
   display: flex;

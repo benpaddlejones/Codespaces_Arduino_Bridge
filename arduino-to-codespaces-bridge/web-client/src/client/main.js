@@ -452,6 +452,8 @@ const dtrCheck = document.getElementById("dtrCheck");
 const rtsCheck = document.getElementById("rtsCheck");
 const clearBtn = document.getElementById("clearBtn");
 const downloadBtn = document.getElementById("downloadBtn");
+const stopOutputBtn = document.getElementById("stopOutputBtn");
+const serialRateEl = document.getElementById("serialRate");
 const freezePlotBtn = document.getElementById("freezePlotBtn");
 const downloadPlotBtn = document.getElementById("downloadPlotBtn");
 
@@ -757,6 +759,51 @@ downloadBtn.addEventListener("click", () => {
   terminal.downloadLog();
 });
 
+/**
+ * Sync the stop/resume button with the manager's stop state.
+ */
+function updateStopOutputButton() {
+  if (!stopOutputBtn) return;
+  const stopped = serialManager.isStopped();
+  stopOutputBtn.textContent = stopped ? "▶ Resume Output" : "⏹ Stop Output";
+  stopOutputBtn.style.backgroundColor = stopped ? "#4caf50" : "";
+  stopOutputBtn.title = stopped
+    ? "Resume displaying serial output. Data received while stopped was discarded."
+    : "Stop displaying serial output. The board stays connected; data received while stopped is discarded.";
+}
+
+if (stopOutputBtn) {
+  stopOutputBtn.addEventListener("click", () => {
+    if (serialManager.isStopped()) {
+      serialManager.resumeOutput();
+      terminal.write("\r\n\x1b[1;32m[Bridge] Output resumed.\x1b[0m\r\n");
+    } else {
+      serialManager.stopOutput();
+      terminal.write(
+        "\r\n\x1b[1;33m[Bridge] Output stopped - incoming data is being discarded.\x1b[0m\r\n",
+      );
+    }
+    updateStopOutputButton();
+  });
+}
+
+serialManager.on("rate", (bytesPerSecond) => {
+  if (!serialRateEl) return;
+  serialRateEl.textContent =
+    bytesPerSecond > 0 ? `${(bytesPerSecond / 1024).toFixed(1)} KB/s` : "";
+});
+
+serialManager.on("flood", (bytesPerSecond) => {
+  terminal.write(
+    `\r\n\x1b[1;31m[Bridge] Serial flood detected (${(
+      bytesPerSecond / 1024
+    ).toFixed(
+      0,
+    )} KB/s) - output stopped automatically. Press "Resume Output" once the board quietens down.\x1b[0m\r\n`,
+  );
+  updateStopOutputButton();
+});
+
 // Freeze Plot Button Handler
 freezePlotBtn.addEventListener("click", () => {
   const frozen = plotter.toggleFreeze();
@@ -772,6 +819,7 @@ downloadPlotBtn.addEventListener("click", () => {
 // Toggle View Handler
 toggleViewBtn.addEventListener("click", () => {
   isPlotterMode = !isPlotterMode;
+  plotter.setVisible(isPlotterMode);
 
   if (isPlotterMode) {
     terminalContainer.style.visibility = "hidden";
@@ -2393,8 +2441,9 @@ baudSelect.addEventListener("change", async () => {
 // Handle incoming data for Terminal
 serialManager.provider.on("data", (data) => {
   // Stay silent while a compile/upload is in progress so device output
-  // (plotter/heartbeat lines) doesn't interleave with the build log.
-  if (serialManager.paused) {
+  // (plotter/heartbeat lines) doesn't interleave with the build log, and
+  // while the user (or the flood guard) has stopped output.
+  if (serialManager.isSilenced()) {
     return;
   }
   terminal.write(data);

@@ -30,6 +30,24 @@ const BAUD_DETECT_DELAY_MS = 500;
 /** Minimum bytes needed to determine if data is valid ASCII */
 const MIN_BYTES_FOR_DETECTION = 5;
 
+/**
+ * Maximum characters held while waiting for a newline. A sketch that never
+ * emits \n would otherwise grow this string until the tab runs out of memory.
+ */
+const MAX_LINE_BUFFER_CHARS = 65_536;
+
+/** Sampling interval for the throughput meter */
+const RATE_WINDOW_MS = 500;
+
+/**
+ * Sustained throughput above which output is stopped automatically. Set well
+ * above 921600 baud (~92 KB/s) so ordinary high-speed logging never trips it.
+ */
+const FLOOD_BYTES_PER_SEC = 150_000;
+
+/** Consecutive over-threshold samples required before auto-stopping */
+const FLOOD_SAMPLES = 6;
+
 // =============================================================================
 // SerialManager Class
 // =============================================================================
@@ -47,14 +65,27 @@ export class SerialManager {
     this.paused = false;
     /** @type {number} Nested pause depth; monitor is silent while > 0 */
     this.pauseDepth = 0;
+    /** @type {boolean} User-requested stop; independent of pauseDepth so an
+     * upload finishing cannot silently re-enable a stream the user stopped */
+    this.userStopped = false;
     /** @type {boolean} */
     this.baudDetectionActive = false;
     /** @type {string} Raw chunk buffer used only during baud detection */
     this.detectionBuffer = "";
-    /** @type {{line: Function[], baudDetected: Function[]}} */
+    /** @type {number} Bytes counted in the current rate window */
+    this.rateBytes = 0;
+    /** @type {number} Timestamp the current rate window opened */
+    this.rateWindowStart = 0;
+    /** @type {number} Most recent measured throughput in bytes/sec */
+    this.bytesPerSecond = 0;
+    /** @type {number} Consecutive samples above the flood threshold */
+    this.floodSamples = 0;
+    /** @type {{line: Function[], baudDetected: Function[], rate: Function[], flood: Function[]}} */
     this.listeners = {
       line: [],
       baudDetected: [],
+      rate: [],
+      flood: [],
     };
 
     this.provider.on("data", (chunk) => {
@@ -69,6 +100,10 @@ export class SerialManager {
    * @returns {Promise<boolean>}
    */
   async connect(baudRate, port = null) {
+    this.userStopped = false;
+    this.floodSamples = 0;
+    this.rateWindowStart = 0;
+    this.rateBytes = 0;
     return await this.provider.connect(baudRate, port);
   }
 
@@ -120,6 +155,40 @@ export class SerialManager {
     if (this.pauseDepth === 0) {
       this.paused = false;
     }
+  }
+
+  /**
+   * Stop delivering serial output to the UI. The port stays open and is still
+   * read, so the connection remains healthy; incoming data is discarded.
+   */
+  stopOutput() {
+    this.userStopped = true;
+    this.buffer = "";
+  }
+
+  /**
+   * Resume delivering serial output after {@link stopOutput}.
+   */
+  resumeOutput() {
+    this.userStopped = false;
+    this.floodSamples = 0;
+  }
+
+  /**
+   * Whether serial output is currently being withheld from the UI, for any
+   * reason (user stop, auto-stop, or an in-progress compile/upload).
+   * @returns {boolean}
+   */
+  isSilenced() {
+    return this.paused || this.userStopped;
+  }
+
+  /**
+   * Whether output is stopped by the user or the flood guard.
+   * @returns {boolean}
+   */
+  isStopped() {
+    return this.userStopped;
   }
 
   /**
@@ -224,8 +293,11 @@ export class SerialManager {
   }
 
   handleData(chunk) {
-    // When paused, discard incoming data
-    if (this.paused) {
+    // Metered before any early return so the throughput readout stays live
+    // while output is stopped - that is how the user knows when to resume.
+    this.meter(chunk.length);
+
+    if (this.paused || this.userStopped) {
       return;
     }
 
@@ -237,16 +309,57 @@ export class SerialManager {
     }
 
     this.buffer += chunk;
-    const lines = this.buffer.split("\n");
 
-    // Process all complete lines
-    while (lines.length > 1) {
-      const line = lines.shift();
-      this.emit("line", line);
+    let start = 0;
+    let index = this.buffer.indexOf("\n");
+    while (index !== -1) {
+      this.emit("line", this.buffer.slice(start, index));
+      start = index + 1;
+      index = this.buffer.indexOf("\n", start);
+    }
+    this.buffer = start > 0 ? this.buffer.slice(start) : this.buffer;
+
+    // A sketch emitting no newlines would otherwise buffer forever.
+    if (this.buffer.length > MAX_LINE_BUFFER_CHARS) {
+      this.emit("line", this.buffer);
+      this.buffer = "";
+    }
+  }
+
+  /**
+   * Sample throughput and auto-stop output if the device floods the tab
+   * faster than it can be rendered.
+   * @param {number} byteCount - Bytes received in this chunk
+   * @private
+   */
+  meter(byteCount) {
+    const now =
+      typeof performance !== "undefined" ? performance.now() : Date.now();
+    if (this.rateWindowStart === 0) {
+      this.rateWindowStart = now;
     }
 
-    // Keep the last partial line in buffer
-    this.buffer = lines[0];
+    this.rateBytes += byteCount;
+    const elapsed = now - this.rateWindowStart;
+    if (elapsed < RATE_WINDOW_MS) return;
+
+    this.bytesPerSecond = Math.round((this.rateBytes * 1000) / elapsed);
+    this.rateBytes = 0;
+    this.rateWindowStart = now;
+    this.emit("rate", this.bytesPerSecond);
+
+    if (this.userStopped) return;
+
+    if (this.bytesPerSecond >= FLOOD_BYTES_PER_SEC) {
+      this.floodSamples++;
+      if (this.floodSamples >= FLOOD_SAMPLES) {
+        this.stopOutput();
+        this.floodSamples = 0;
+        this.emit("flood", this.bytesPerSecond);
+      }
+    } else {
+      this.floodSamples = 0;
+    }
   }
 
   on(event, callback) {

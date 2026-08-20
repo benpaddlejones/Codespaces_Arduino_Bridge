@@ -136,6 +136,18 @@
           <button id="downloadBtn">Download Output</button>
           <div class="separator"></div>
           <button
+            id="stopOutputBtn"
+            title="Stop displaying serial output. The board stays connected; data received while stopped is discarded."
+          >
+            ⏹ Stop Output
+          </button>
+          <span
+            id="serialRate"
+            class="serial-rate"
+            title="Incoming serial throughput"
+          ></span>
+          <div class="separator"></div>
+          <button
             id="i2cScanBtn"
             title="Upload a diagnostic sketch that scans the I2C bus and identifies connected devices (replaces the sketch on the board)"
           >

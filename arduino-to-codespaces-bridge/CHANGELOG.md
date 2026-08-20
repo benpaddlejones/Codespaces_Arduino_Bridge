@@ -6,6 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Same-day debugging iterations are grouped into their release milestone.
 
+## [2.0.3] - 2026-08-20
+
+### Added
+
+- **Stop Output control** - the serial monitor can now be stopped without
+  disconnecting the board. The port stays open and the connection stays
+  healthy; data received while stopped is discarded. A live KB/s readout sits
+  beside the button so a runaway sketch is visible before it becomes a
+  problem.
+- **Flood guard** - sustained output above 150 KB/s (well beyond 921600 baud)
+  stops the monitor automatically and says so in the terminal, instead of
+  freezing the browser tab.
+
+### Fixed
+
+- Serial output no longer grows the tab's memory without limit. The
+  downloadable log is a capped 8 MB ring (truncation is noted in the
+  downloaded file), and a sketch that never emits a newline can no longer
+  grow the line buffer indefinitely.
+- Terminal rendering is coalesced to one write per animation frame and paced
+  by xterm's write-completion callback, so render cost no longer scales with
+  the device's output rate. Background tabs fall back to a timer, since
+  `requestAnimationFrame` stops firing when a tab is hidden.
+- The serial plotter redraws once per frame instead of once per line, and
+  does no rendering at all while the terminal view is showing. Chart data
+  still accumulates in the background, so switching views keeps history.
+- Timestamp mode no longer walks each chunk character by character - a fast
+  stream with timestamps enabled previously locked the main thread.
+- Large bursts dispatch in linear rather than quadratic time.
+- A compile or upload finishing can no longer silently resume a stream the
+  user had stopped.
+
+### Internal
+
+- New `npm run test:serial-flow` suite (29 assertions) covering stop/resume
+  semantics, buffer caps, burst dispatch and the flood guard.
+
 ## [2.0.2] - 2026-08-01
 
 ### Added

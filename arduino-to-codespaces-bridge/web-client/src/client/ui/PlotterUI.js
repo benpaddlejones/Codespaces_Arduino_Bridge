@@ -58,6 +58,15 @@ export class PlotterUI {
     /** @type {boolean} Whether the chart is frozen */
     this.frozen = false;
 
+    /** @type {boolean} Whether the plotter is the visible view */
+    this.visible = false;
+
+    /** @type {boolean} Whether a redraw is already scheduled */
+    this.updateScheduled = false;
+
+    /** @type {boolean} Data arrived while hidden and needs a redraw on show */
+    this.updatePending = false;
+
     this.initChart();
   }
 
@@ -144,7 +153,38 @@ export class PlotterUI {
       }
     });
 
-    this.chart.update();
+    this.scheduleUpdate();
+  }
+
+  /**
+   * Coalesce redraws to at most one per frame. Redrawing per line locks the
+   * main thread once a sketch prints faster than the display refresh rate.
+   * @private
+   */
+  scheduleUpdate() {
+    if (!this.visible) {
+      this.updatePending = true;
+      return;
+    }
+    if (this.updateScheduled) return;
+    this.updateScheduled = true;
+    requestAnimationFrame(() => {
+      this.updateScheduled = false;
+      this.updatePending = false;
+      if (this.chart) this.chart.update("none");
+    });
+  }
+
+  /**
+   * Set whether the plotter is the visible view. Data keeps accumulating
+   * while hidden, but nothing is rendered.
+   * @param {boolean} visible - Whether the plotter canvas is on screen
+   */
+  setVisible(visible) {
+    this.visible = visible;
+    if (visible && this.updatePending) {
+      this.scheduleUpdate();
+    }
   }
 
   /**
